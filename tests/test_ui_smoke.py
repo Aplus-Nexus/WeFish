@@ -27,7 +27,10 @@ class DesktopSmokeTests(unittest.TestCase):
 
     def setUp(self):
         self.window = WeFishWindow(WeReadClient(base_url=f"http://127.0.0.1:{self.server.server_port}"))
-        self.assertTrue(str(self.window.cache.root).endswith(".wefish/mock-cache"))
+        # Path separators differ between POSIX and Windows runners; assert the
+        # cache structure instead of matching a platform-specific string.
+        self.assertEqual(self.window.cache.root.name, "mock-cache")
+        self.assertEqual(self.window.cache.root.parent.name, ".wefish")
         self.wait_for(lambda: self.window.shelf.count() == 1)
 
     def wait_for(self, predicate, timeout=3.0):
