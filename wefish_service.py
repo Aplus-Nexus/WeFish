@@ -63,7 +63,7 @@ def _restore_credentials_with_timeout(client: WeReadClient, timeout: float = CRE
             done.set()
 
     threading.Thread(target=restore, name="wefish-credential-store", daemon=True).start()
-    if not done.wait(max(0.1, float(timeout))):
+    if not done.wait(max(0.001, float(timeout))):
         return None, "timeout"
     if result.get("error") is not None:
         return None, "error"
