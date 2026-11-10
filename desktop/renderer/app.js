@@ -252,6 +252,18 @@ function resetLineTimer() {
   }, state.lineIntervalMs);
 }
 
+function setLineInterval(seconds, notify = false) {
+  const value = Math.max(0.5, Math.min(10, Number(seconds) || 1));
+  state.lineIntervalMs = value * 1000;
+  const input = $('line-interval');
+  const helpInput = $('help-line-interval');
+  if (input) input.value = String(value);
+  if (helpInput) helpInput.value = String(value);
+  try { localStorage.setItem('wefish.lineInterval', String(value)); } catch (_) { /* private mode */ }
+  resetLineTimer();
+  if (notify) toast(`逐行速度：每 ${value} 秒换行`);
+}
+
 function setLineAuto(enabled) {
   state.lineAuto = Boolean(enabled);
   resetLineTimer();
@@ -748,6 +760,7 @@ function openModal(content, title = '扫码进入') {
 function showHelp() {
   clearInterval(state.pollTimer);
   state.pollTimer = null;
+  $('help-line-interval').value = String(state.lineIntervalMs / 1000);
   $('qr-modal').classList.add('hidden');
   $('help-modal').classList.remove('hidden');
   $('modal-backdrop').classList.remove('hidden');
@@ -900,6 +913,7 @@ function bindEvents() {
   $('qr-button').addEventListener('click', showQR);
   $('shelf-button').addEventListener('click', openShelf);
   $('link-button').addEventListener('click', showReaderLink);
+  $('help-button').addEventListener('click', showHelp);
   $('close-modal').addEventListener('click', closeModal);
   $('close-help').addEventListener('click', closeModal);
   $('previous-button').addEventListener('click', goPrevious);
@@ -909,13 +923,8 @@ function bindEvents() {
   });
   $('position-slider').addEventListener('change', (event) => jumpToProgress(event.target.value));
   $('line-toggle').addEventListener('click', () => setLineAuto(!state.lineAuto));
-  $('line-interval').addEventListener('change', (event) => {
-    const seconds = Math.max(0.5, Math.min(10, Number(event.target.value) || 1));
-    event.target.value = String(seconds);
-    state.lineIntervalMs = seconds * 1000;
-    try { localStorage.setItem('wefish.lineInterval', String(seconds)); } catch (_) { /* private mode */ }
-    resetLineTimer();
-  });
+  $('line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
+  $('help-line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
   $('toggle-reading').addEventListener('click', () => {
     state.reading = !state.reading;
     setLineAuto(state.reading);
@@ -943,6 +952,8 @@ function bindEvents() {
     if (command === 'line-previous') nextLine(-1);
     if (command === 'line-next') nextLine(1);
     if (command === 'line-toggle') setLineAuto(!state.lineAuto);
+    if (command === 'help') showHelp();
+    if (command.startsWith('line-interval:')) setLineInterval(command.split(':', 2)[1], true);
     if (command === 'qr') showQR();
   });
   window.wefish.onVisibility((visible) => {
@@ -971,8 +982,7 @@ async function boot() {
   try {
     const stored = Number(localStorage.getItem('wefish.lineInterval') || 1);
     if (stored >= 0.5 && stored <= 10) {
-      state.lineIntervalMs = stored * 1000;
-      $('line-interval').value = String(stored);
+      setLineInterval(stored);
     }
   } catch (_) { /* private mode */ }
   state.timer = setInterval(tick, 1000);

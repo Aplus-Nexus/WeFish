@@ -15,7 +15,7 @@
       <div class="top-actions">
         <button class="icon-button quiet top-action-button" id="open-shelf" title="打开书架" aria-label="打开书架">书架</button>
         <button class="icon-button quiet top-action-button" id="open-insights" title="阅读数据" aria-label="阅读数据">数据</button>
-        <button class="icon-button quiet top-action-button" id="open-help" title="快捷键与使用说明" aria-label="快捷键与使用说明">快捷键</button>
+        <button class="icon-button quiet top-action-button" id="open-help" title="快捷键与使用说明" aria-label="快捷键与使用说明">帮助</button>
         <button class="icon-button quiet" id="hide-panel" title="隐藏阅读舱" aria-label="隐藏阅读舱">×</button>
       </div>
     </header>
@@ -46,6 +46,7 @@
             <button class="button primary" id="shelf-button">打开书架</button>
             <button class="button ghost" id="qr-button">微信扫码</button>
             <button class="button ghost" id="link-button">打开链接</button>
+            <button class="button ghost" id="help-button">快捷键与使用</button>
           </div>
         </div>
       </article>
@@ -81,7 +82,8 @@
       <div class="help-content">
         <div class="help-section"><h3>三步开始</h3><ol class="help-steps"><li><strong>打开书架</strong><span>点击顶部“书架”，同步后选择一本书。</span></li><li><strong>打开正文</strong><span>也可以点“微信扫码”登录，或粘贴微信读书阅读链接。</span></li><li><strong>藏到顶部栏</strong><span>点击右上角 × 隐藏窗口，菜单栏逐行阅读会继续工作。</span></li></ol></div>
         <div class="help-section"><h3>全局快捷键</h3><div class="help-shortcuts"><div><span>上一页 / 下一页</span><kbd>⌘/Ctrl ⌥/Alt ←/→</kbd></div><div><span>上一行 / 下一行</span><kbd>⌘/Ctrl ⌥/Alt ↑/↓</kbd></div><div><span>暂停 / 启动自动逐行</span><kbd>⌘/Ctrl ⌥/Alt Space</kbd></div><div><span>显示 / 隐藏阅读舱</span><kbd>⌘/Ctrl ⌥/Alt M</kbd></div><div><span>上一章 / 下一章</span><kbd>⌘/Ctrl ⌥/Alt ⇧ ←/→</kbd></div><div><span>同步书架</span><kbd>⌘/Ctrl ⌥/Alt R</kbd></div><div><span>切换小窗模式</span><kbd>⌘/Ctrl ⌥/Alt P</kbd></div></div></div>
-        <p class="help-note">阅读时可在“行”按钮切换逐行显示，右侧数字设置自动换行间隔，默认每 1 秒换行。</p>
+        <label class="help-speed"><span>逐行换行间隔</span><input id="help-line-interval" type="number" min="0.5" max="10" step="0.5" value="1" /><b>秒</b><small>数值越小，顶部栏换行越快；也可以右键托盘图标，在“逐行速度”里调整。</small></label>
+        <p class="help-note">阅读时可在“行”按钮切换逐行显示；隐藏主窗口后，顶部栏会继续显示当前行。</p>
       </div>
     </section>
   </div>
