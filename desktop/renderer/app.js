@@ -737,9 +737,19 @@ function tick() {
 }
 
 function openModal(content, title = '扫码进入') {
+  $('qr-modal').classList.remove('hidden');
+  $('help-modal').classList.add('hidden');
   $('modal-title').textContent = title;
   $('modal-content').replaceChildren();
   $('modal-content').insertAdjacentHTML('beforeend', content);
+  $('modal-backdrop').classList.remove('hidden');
+}
+
+function showHelp() {
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
+  $('qr-modal').classList.add('hidden');
+  $('help-modal').classList.remove('hidden');
   $('modal-backdrop').classList.remove('hidden');
 }
 
@@ -747,6 +757,8 @@ function closeModal() {
   clearInterval(state.pollTimer);
   state.pollTimer = null;
   $('modal-backdrop').classList.add('hidden');
+  $('qr-modal').classList.remove('hidden');
+  $('help-modal').classList.add('hidden');
 }
 
 function showManualAuth() {
@@ -879,6 +891,7 @@ async function loadState({ openShelfOnSuccess = false } = {}) {
 function bindEvents() {
   $('open-shelf').addEventListener('click', openShelf);
   $('open-insights').addEventListener('click', showInsights);
+  $('open-help').addEventListener('click', showHelp);
   $('close-shelf').addEventListener('click', closeShelf);
   $('hide-panel').addEventListener('click', () => window.wefish.hide());
   $('sync-button').addEventListener('click', loadShelf);
@@ -888,6 +901,7 @@ function bindEvents() {
   $('shelf-button').addEventListener('click', openShelf);
   $('link-button').addEventListener('click', showReaderLink);
   $('close-modal').addEventListener('click', closeModal);
+  $('close-help').addEventListener('click', closeModal);
   $('previous-button').addEventListener('click', goPrevious);
   $('next-button').addEventListener('click', goNext);
   $('chapter-jump').addEventListener('change', (event) => {
