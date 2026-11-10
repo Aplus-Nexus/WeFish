@@ -16,7 +16,11 @@ function run(args) {
   // unavailable; CI still installs the same version before packaging.
   const localElectron = path.join('.', 'node_modules', 'electron', 'dist');
   const configArgs = fs.existsSync(localElectron) ? [`--config.electronDist=${localElectron}`] : [];
-  execFileSync(npx, ['electron-builder', ...args, ...configArgs], { stdio: 'inherit' });
+  execFileSync(npx, ['electron-builder', ...args, ...configArgs], {
+    stdio: 'inherit',
+    // Windows exposes npx as a .cmd shim, which must be launched through a shell.
+    shell: process.platform === 'win32',
+  });
 }
 
 function findMacApp() {
