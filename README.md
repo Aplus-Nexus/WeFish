@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/brand/logo-tide.svg" width="112" alt="WeFish logo">
   <h1>WeFish · 上班墨鱼</h1>
-  <p>把阅读藏进工作日的缝隙。</p>
+  <p>让阅读随时可用，从书架继续读下去。</p>
   <p>
     <a href="https://github.com/Aplus-Nexus/WeFish/releases"><img src="https://img.shields.io/github/v/release/Aplus-Nexus/WeFish?style=flat-square&color=B8F27C&label=release" alt="Latest release"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-F27C5C?style=flat-square" alt="AGPL-3.0"></a>
@@ -11,7 +11,7 @@
 
 ![WeFish menu-bar reading capsule](docs/assets/hero.svg)
 
-WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书的书架、章节、阅读位置、阅读时长、摘录和书友想法收进一个低干扰阅读舱；需要更隐蔽时，当前行会留在 macOS 菜单栏或 Windows 托盘提示里。
+WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书的书架、章节、阅读位置、阅读时长、摘录和书友想法收进一个简洁的阅读窗口；需要减少打扰时，当前行会留在 macOS 菜单栏或 Windows 托盘提示里。
 
 ## 1.0 能做什么
 
