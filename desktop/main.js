@@ -68,7 +68,12 @@ function setOfficeTitleMode(enabled) {
 }
 
 function setTrayLine(value) {
-  trayLineText = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  // Keep the renderer's non-breaking padding: macOS uses the title width to
+  // reserve the visible menu-bar reading area.
+  trayLineText = String(value || '')
+    .replace(/[\t\n\r ]+/g, ' ')
+    .replace(/^ +| +$/g, '')
+    .slice(0, 160);
   if (!tray || officeTitleMode) return;
   if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
     tray.setTitle(trayLineText);
@@ -142,6 +147,15 @@ function createTray() {
       { label: '2 秒', click: () => panel?.webContents.send('command', 'line-interval:2') },
       { label: '3 秒', click: () => panel?.webContents.send('command', 'line-interval:3') },
       { label: '5 秒（慢）', click: () => panel?.webContents.send('command', 'line-interval:5') },
+    ] },
+    { label: '顶部栏阅读区域', submenu: [
+      { label: '跟随文本（动态）', click: () => panel?.webContents.send('command', 'tray-width:dynamic') },
+      { label: '固定 28 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:28') },
+      { label: '固定 40 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:40') },
+      { label: '固定 56 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:56') },
+      { label: '尽量占满空余位置', click: () => panel?.webContents.send('command', 'tray-width:fill') },
+      { type: 'separator' },
+      { label: '打开宽度设置', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'tray-width:settings'); } },
     ] },
     { label: '快捷键与使用说明', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); } },
     { label: '微信扫码', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'qr'); } },
@@ -387,9 +401,12 @@ async function assertMockRenderer() {
     hasLineShortcuts: document.body.textContent.includes('上一行 / 下一行'),
     hasAutoLineShortcut: document.body.textContent.includes('自动逐行'),
     hasHideShortcut: document.body.textContent.includes('隐藏 / 唤起'),
+    hasTrayWidthSettings: document.body.textContent.includes('顶部栏阅读区域')
+      && Boolean(document.querySelector('#tray-width-mode'))
+      && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
   }
   if (panel.isVisible()) throw new Error('reader panel was shown by menu-bar reading actions');

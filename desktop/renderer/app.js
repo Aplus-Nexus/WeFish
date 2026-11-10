@@ -29,6 +29,8 @@ const state = {
   lineAuto: true,
   lineTimer: null,
   lineIntervalMs: 1000,
+  trayWidthMode: 'dynamic',
+  trayWidthChars: 28,
   syncStatus: 'idle',
   remoteProgress: null,
   pendingReports: [],
@@ -222,18 +224,92 @@ function updateReaderPosition() {
 }
 
 function setTrayLine(text) {
-  if (window.wefish && typeof window.wefish.setLine === 'function') window.wefish.setLine(String(text || ''));
+  if (window.wefish && typeof window.wefish.setLine === 'function') window.wefish.setLine(formatTrayLine(text));
 }
 
 function currentPageText() {
   return String(state.pages[state.pageIndex]?.text || '').trim();
 }
 
+function displayWidth(value) {
+  return Array.from(String(value || '')).length;
+}
+
+function sliceDisplayText(value, width) {
+  let result = '';
+  let used = 0;
+  for (const character of Array.from(String(value || ''))) {
+    if (used + 1 > width) break;
+    result += character;
+    used += 1;
+  }
+  return result;
+}
+
+function trayLineWidth() {
+  return state.trayWidthMode === 'dynamic'
+    ? (window.innerHeight < 400 ? 18 : 28)
+    : state.trayWidthChars;
+}
+
+function formatTrayLine(text) {
+  const value = String(text || '阅读器').replace(/\s+/g, ' ').trim() || '阅读器';
+  if (state.trayWidthMode === 'dynamic') return value;
+  const width = Math.max(12, state.trayWidthChars);
+  const clipped = displayWidth(value) > width
+    ? `${sliceDisplayText(value, Math.max(1, width - 1))}…`
+    : value;
+  return clipped + '\u00a0'.repeat(Math.max(0, width - displayWidth(clipped)));
+}
+
+function updateTrayWidthControls() {
+  const mode = $('tray-width-mode');
+  const range = $('tray-width-chars');
+  const number = $('tray-width-number');
+  const label = $('tray-width-value-label');
+  const hint = $('tray-width-hint');
+  if (!mode || !range || !number || !label || !hint) return;
+  mode.value = state.trayWidthMode;
+  range.value = String(state.trayWidthChars);
+  number.value = String(state.trayWidthChars);
+  const isDynamic = state.trayWidthMode === 'dynamic';
+  range.disabled = isDynamic;
+  number.disabled = isDynamic;
+  label.textContent = state.trayWidthMode === 'fill' ? '填充上限' : '固定长度';
+  hint.textContent = isDynamic
+    ? '文字多长，顶部栏就占多长。'
+    : state.trayWidthMode === 'fill'
+      ? '会尽量占满菜单栏空余位置；数值是防止挤压系统图标的最大宽度。'
+      : '短句补齐空白，长句按这个长度分页显示。';
+}
+
+function setTrayWidth(mode, chars, notify = false) {
+  const nextMode = ['dynamic', 'fixed', 'fill'].includes(mode) ? mode : 'dynamic';
+  const requested = Number(chars);
+  const fallback = nextMode === 'fill' ? Math.max(64, state.trayWidthChars) : state.trayWidthChars;
+  const nextChars = Math.max(12, Math.min(120, Math.round(Number.isFinite(requested) && requested > 0 ? requested : fallback)));
+  state.trayWidthMode = nextMode;
+  state.trayWidthChars = nextChars;
+  state.lineIndex = 0;
+  updateTrayWidthControls();
+  try {
+    localStorage.setItem('wefish.trayWidthMode', state.trayWidthMode);
+    localStorage.setItem('wefish.trayWidthChars', String(state.trayWidthChars));
+  } catch (_) { /* private mode */ }
+  if (state.pages.length) updateLineDisplay();
+  if (notify) {
+    const message = nextMode === 'dynamic'
+      ? '顶部栏宽度：跟随文本'
+      : nextMode === 'fill'
+        ? `顶部栏宽度：尽量占满（上限 ${nextChars} 字）`
+        : `顶部栏宽度：固定 ${nextChars} 字`;
+    toast(message);
+  }
+}
+
 function updateLineDisplay() {
   const pageText = currentPageText();
-  const compact = window.innerHeight < 400;
-  const width = compact ? 18 : 28;
-  state.lines = WeFishPagination.splitLines(pageText, width);
+  state.lines = WeFishPagination.splitLines(pageText, trayLineWidth());
   state.lineIndex = Math.max(0, Math.min(state.lineIndex, Math.max(0, state.lines.length - 1)));
   const line = state.lines[state.lineIndex] || pageText || '阅读器';
   setTrayLine(line);
@@ -761,6 +837,7 @@ function showHelp() {
   clearInterval(state.pollTimer);
   state.pollTimer = null;
   $('help-line-interval').value = String(state.lineIntervalMs / 1000);
+  updateTrayWidthControls();
   $('qr-modal').classList.add('hidden');
   $('help-modal').classList.remove('hidden');
   $('modal-backdrop').classList.remove('hidden');
@@ -925,6 +1002,9 @@ function bindEvents() {
   $('line-toggle').addEventListener('click', () => setLineAuto(!state.lineAuto));
   $('line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
   $('help-line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
+  $('tray-width-mode').addEventListener('change', (event) => setTrayWidth(event.target.value, $('tray-width-number').value, true));
+  $('tray-width-chars').addEventListener('input', (event) => setTrayWidth(state.trayWidthMode, event.target.value));
+  $('tray-width-number').addEventListener('change', (event) => setTrayWidth(state.trayWidthMode, event.target.value, true));
   $('toggle-reading').addEventListener('click', () => {
     state.reading = !state.reading;
     setLineAuto(state.reading);
@@ -954,6 +1034,15 @@ function bindEvents() {
     if (command === 'line-toggle') setLineAuto(!state.lineAuto);
     if (command === 'help') showHelp();
     if (command.startsWith('line-interval:')) setLineInterval(command.split(':', 2)[1], true);
+    if (command.startsWith('tray-width:')) {
+      const [, mode, chars] = command.split(':');
+      if (mode === 'settings') {
+        showHelp();
+        requestAnimationFrame(() => $('tray-width-mode')?.focus());
+      } else {
+        setTrayWidth(mode, chars, true);
+      }
+    }
     if (command === 'qr') showQR();
   });
   window.wefish.onVisibility((visible) => {
@@ -984,6 +1073,11 @@ async function boot() {
     if (stored >= 0.5 && stored <= 10) {
       setLineInterval(stored);
     }
+  } catch (_) { /* private mode */ }
+  try {
+    const mode = localStorage.getItem('wefish.trayWidthMode') || 'dynamic';
+    const chars = Number(localStorage.getItem('wefish.trayWidthChars') || 28);
+    setTrayWidth(mode, chars);
   } catch (_) { /* private mode */ }
   state.timer = setInterval(tick, 1000);
   $('duration').textContent = formatDuration(state.elapsed);
