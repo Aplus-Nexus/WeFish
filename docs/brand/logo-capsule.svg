@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 384" role="img" aria-labelledby="title desc">
+  <title>WeFish Capsule wordmark</title>
+  <desc>A compact menu-bar capsule with a quiet reading signal.</desc>
+  <rect x="8" y="8" width="752" height="368" rx="184" fill="#101413" stroke="#B8F27C" stroke-width="16"/>
+  <circle cx="190" cy="192" r="82" fill="#B8F27C"/>
+  <path d="M158 215c23-29 49-43 78-42 22 1 40 9 54 24-20 28-48 42-84 42-20 0-36-8-48-24Z" fill="#101413"/>
+  <circle cx="191" cy="210" r="8" fill="#F27C5C"/>
+  <path d="M337 153h260M337 192h185M337 231h219" stroke="#F5EFDF" stroke-linecap="round" stroke-width="18" opacity=".84"/>
+</svg>

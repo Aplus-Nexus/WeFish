@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title>WeFish Page mark</title>
+  <desc>An open page that folds into a small fish tail.</desc>
+  <rect width="512" height="512" rx="116" fill="#F5EFDF"/>
+  <path d="M92 143c72 0 121 18 164 58v205c-42-30-92-44-164-44V143Z" fill="#101413"/>
+  <path d="M420 143c-72 0-121 18-164 58v205c42-30 92-44 164-44V143Z" fill="#1B2823"/>
+  <path d="M256 201v205" stroke="#B8F27C" stroke-width="14"/>
+  <path d="M128 188c39 4 73 15 103 34M128 232c39 4 73 15 103 34M384 188c-39 4-73 15-103 34M384 232c-39 4-73 15-103 34" fill="none" stroke="#F5EFDF" stroke-linecap="round" stroke-width="9" opacity=".72"/>
+  <path d="M194 383c25 21 52 32 82 32 44 0 80-20 108-59-39 9-72 5-99-12-26 20-56 33-91 39Z" fill="#F27C5C"/>
+</svg>

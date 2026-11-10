@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
+  <title>WeFish menu-bar reading capsule</title>
+  <desc>A quiet desktop reading capsule with a menu-bar line ticker and paginated text.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0D1211"/><stop offset="1" stop-color="#1B2923"/></linearGradient>
+    <linearGradient id="glow" x1="0" x2="1"><stop stop-color="#B8F27C" stop-opacity=".7"/><stop offset="1" stop-color="#F27C5C" stop-opacity=".1"/></linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="34"/></filter>
+    <filter id="shadow"><feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000" flood-opacity=".42"/></filter>
+  </defs>
+  <rect width="1440" height="820" rx="46" fill="#090C0B"/>
+  <circle cx="1170" cy="148" r="190" fill="#B8F27C" opacity=".13" filter="url(#blur)"/>
+  <circle cx="184" cy="730" r="210" fill="#F27C5C" opacity=".08" filter="url(#blur)"/>
+  <g filter="url(#shadow)">
+    <rect x="120" y="105" width="1200" height="92" rx="24" fill="#101413" stroke="#31433A" stroke-width="2"/>
+    <circle cx="168" cy="151" r="22" fill="none" stroke="#B8F27C" stroke-width="7"/>
+    <circle cx="168" cy="151" r="7" fill="#B8F27C"/>
+    <path d="M235 151h172" stroke="#F5EFDF" stroke-linecap="round" stroke-width="14" opacity=".92"/>
+    <path d="M444 151h122" stroke="#B8F27C" stroke-linecap="round" stroke-width="14" opacity=".75"/>
+    <path d="M594 151h214" stroke="#F5EFDF" stroke-linecap="round" stroke-width="14" opacity=".32"/>
+    <circle cx="1128" cy="151" r="7" fill="#F27C5C"/>
+    <path d="M1160 151h82" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".3"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="318" y="234" width="804" height="510" rx="36" fill="url(#bg)" stroke="#35483D" stroke-width="2"/>
+    <rect x="318" y="234" width="804" height="7" rx="4" fill="url(#glow)"/>
+    <circle cx="362" cy="277" r="9" fill="#B8F27C"/>
+    <path d="M385 277h155" stroke="#B8F27C" stroke-linecap="round" stroke-width="10" opacity=".65"/>
+    <path d="M954 277h115" stroke="#F5EFDF" stroke-linecap="round" stroke-width="9" opacity=".28"/>
+    <path d="M366 340h612" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".78"/>
+    <path d="M366 382h544" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".42"/>
+    <path d="M366 424h642" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".68"/>
+    <path d="M366 466h502" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".36"/>
+    <path d="M366 508h594" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".6"/>
+    <path d="M366 550h412" stroke="#F5EFDF" stroke-linecap="round" stroke-width="12" opacity=".26"/>
+    <rect x="366" y="638" width="704" height="2" fill="#33453C"/>
+    <path d="M366 682h115M964 682h106" stroke="#F5EFDF" stroke-linecap="round" stroke-width="10" opacity=".35"/>
+    <circle cx="718" cy="682" r="18" fill="#B8F27C"/>
+    <path d="M713 674v16M723 674v16" stroke="#101413" stroke-linecap="round" stroke-width="4"/>
+  </g>
+  <g opacity=".88">
+    <path d="M164 612c62-46 129-63 199-52" fill="none" stroke="#B8F27C" stroke-linecap="round" stroke-width="9"/>
+    <path d="M164 653c54-31 104-38 151-22" fill="none" stroke="#F27C5C" stroke-linecap="round" stroke-width="6"/>
+    <circle cx="160" cy="612" r="10" fill="#B8F27C"/>
+  </g>
+</svg>

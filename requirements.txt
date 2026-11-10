@@ -1,0 +1,14 @@
+PySide6>=6.7,<7
+pyinstaller>=6.0
+pynput>=1.7.7
+# Python 3.9/macOS needs the PyObjC line with pre-10 wheels; newer Python
+# versions use the current transitive PyObjC release.
+pyobjc-core<10; sys_platform == "darwin" and python_version < "3.10"
+pyobjc-framework-Cocoa<10; sys_platform == "darwin" and python_version < "3.10"
+pyobjc-framework-Quartz<10; sys_platform == "darwin" and python_version < "3.10"
+pyobjc-framework-ApplicationServices<10; sys_platform == "darwin" and python_version < "3.10"
+pyobjc-framework-CoreText<10; sys_platform == "darwin" and python_version < "3.10"
+qrcode>=7.4,<9
+Pillow>=9.1
+keyring>=25.0
+

@@ -1,0 +1,2 @@
+"""WeFish desktop reader."""
+

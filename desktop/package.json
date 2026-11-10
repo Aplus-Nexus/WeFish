@@ -1,0 +1,70 @@
+{
+  "name": "wefish-desktop",
+  "version": "1.0.0",
+  "author": "WeFish contributors",
+  "description": "Menu-bar reading capsule for WeFish",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron .",
+    "dev:mock": "electron . --mock",
+    "smoke:mock": "electron . --mock --self-test",
+    "test:pagination": "node --test renderer/pagination.test.js",
+    "smoke:package": "node run_smoke.js",
+    "package": "node package.js",
+    "package:mac": "node package.js --target=mac",
+    "package:mac:dir": "electron-builder --mac dir --publish never",
+    "package:mac:zip": "node package.js --target=mac",
+    "package:win:zip": "node package.js --target=win"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.17.0"
+  },
+  "build": {
+    "appId": "com.wefish.desktop",
+    "productName": "上班墨鱼",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/WeFishService",
+        "to": "WeFishService",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../LICENSE",
+        "to": "licenses/LICENSE"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "licenses/NOTICE"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.books",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    }
+  },
+  "allowScripts": {
+    "electron@44.7.0": true
+  }
+}

@@ -1,0 +1,56 @@
+name: WeFish desktop builds
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: mac
+          - os: windows-2022
+            target: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the local WeRead service
+        run: python -m PyInstaller --noconfirm --clean WeFishService.spec
+      - name: Install and package Electron desktop shell
+        shell: bash
+        run: |
+          cd desktop
+          npm ci
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            npm run package:mac
+            npm run smoke:package
+          else
+            npm run package:win:zip
+            npm run smoke:package
+          fi
+      - name: Verify packaged archive
+        run: python -c "from pathlib import Path; from zipfile import ZipFile; paths=list(Path('desktop/release').glob('*.zip')); assert paths; assert all(ZipFile(p).testzip() is None for p in paths)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WeFish-${{ matrix.target }}
+          path: desktop/release/*.zip
+      - name: Publish tagged release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/release/*.zip
+          generate_release_notes: true

@@ -1,0 +1,149 @@
+# WeFish progress
+
+- 2026-11-07：确认参考仓库为 AGPL-3.0；已分离 Gateway 与 Web Reader 两类会话。
+- 2026-11-07：建立 `wefish_core.py`，包含书架、搜索、元数据、进度、统计、想法、正文分片解码、续期、阅读上报、重试和本地缓存。
+- 2026-11-07：建立本地 mock 服务与 4 个 unittest；全部通过，0 skipped。
+- 2026-11-07：建立 PySide6 桌面壳；已用 mock 实际查看书架、章节正文、下一章、书友想法、紧凑模式。
+- 2026-11-07：macOS ARM64 PyInstaller `.app` 构建通过。
+- 2026-11-07：增加授权按钮、`WEREAD_API_KEY`/`WEREAD_COOKIE` 注入、pynput 系统级快捷键尝试和 Windows/macOS GitHub Actions 构建矩阵。
+- 2026-11-07：桌面阅读窗改为真实调用章节目录与 Web Reader 正文链路，不再渲染写死的示例正文；新增 `weread_e` 标识编码与章节目录测试。
+- 2026-11-07：增加真正的小窗模式（390×270、置顶、88% 透明、可恢复）、托盘入口和每 60 秒阅读时长上报。
+- 2026-11-07：接入书架/章节本地缓存、断网回退和进度滑块回写；待联网时显示明确状态。
+- 2026-11-07：增加阅读统计和笔记汇总入口；会员权益明确显示为服务端账号能力，不伪造可用会员状态。
+- 2026-11-07：构建脚本增加宿主系统校验，避免在 macOS 上误报 Windows 打包成功；补充 `pyproject.toml` 安装入口。
+- 2026-11-07：审计确认当前环境没有 `WEREAD_API_KEY` 或 `WEREAD_COOKIE`；macOS 构建成功，Windows 命令在非 Windows 主机上按预期拒绝并提示使用 CI。
+- 2026-11-07：桌面仍处于锁屏，无法做真实坐标点击；改用 `QT_QPA_PLATFORM=offscreen` 完成可复跑 UI smoke：书架=1、正文=ok、小窗=ok。
+- 2026-11-07：将上述 UI smoke 固化为 `tests/test_ui_smoke.py`；完整测试由 4 项增加到 5 项，全部通过。
+- 2026-11-07：修正认证边界：Gateway 使用独立无 Cookie opener，Web Reader 使用 CookieJar opener，并补齐 Web 请求 Origin 与 JSON Content-Type。
+- 2026-11-07：实现微信扫码登录：获取 UID、显示二维码、轮询确认、交换 Cookie/API Key；mock QR 流程测试通过。
+- 2026-11-07：Mac 解锁后实际启动 `.app` 并显示扫码二维码；真实轮询因当前网络重试 3 次后报错，二维码窗口、错误提示和取消操作均已验证，未伪造登录成功。
+- 2026-11-07：修正真实 QR 长轮询：未扫码超时现在保持“等待扫码”，不再被错误显示为网络失败；新增 pending 回归测试。
+- 2026-11-07：修正正文桥接：章节正文请求现在使用 Cookie Web Reader、章节 `synckey/copyRightSynckey`、`sc=1`、`ps/pc`、时间戳和签名；API Key 不再被误当成正文权限。
+- 2026-11-07：实测公网登录入口 `weread.qq.com` 返回 200；完整测试增至 8 项并全部通过，macOS `.app` 重新构建成功。
+- 2026-11-07：按参考仓库的正文研究修正桥接细节：`ps` 改为从 `/web/reader` 的 `reader.psvts` 获取，章节分片改为 JSON `POST`，补齐 TXT 书 `t_0/t_1`、`pc != ps` 碰撞规避和 `MD5 + Base64` 解码；阅读时长/进度改为带 `appId/sg/s` 的 Reader 签名上报。
+- 2026-11-07：扫码会话增加独立 `wr_fp` 指纹和隔离 CookieJar；长轮询与登录交换移到 Qt 后台线程，扫码等待不再阻塞窗口；覆盖扫码成功但没有 Skill API Key 的分支。完整测试增至 11 项并全部通过。
+- 2026-11-07：修正阅读时长/进度上报为 Web Reader 的 `appId/b/c/ps/pc/sg/s` 签名载荷；`python3 build.py --target current` 在 macOS ARM64 重新打包成功，产物为 `dist/WeFish.app`。
+- 2026-11-07：阅读窗口改用 Web 目录中的真实 `chapterUid/chapterIdx` 导航，不再假设每本书从 UID=1 连续递增；章节目录测试、UI smoke 与 macOS 打包再次通过。
+- 2026-11-07：新增“打开读书链接”Cookie-only 入口，允许没有 Skill API Key 的已扫码账号直接粘贴 `/web/reader/...` 链接加载目录和正文；新增 URL 白名单与无 Gateway Key 回归测试，完整测试增至 13 项并通过。
+- 2026-11-07：修复打包后 `--mock` 离线演示可能被本机反向 DNS 阻塞的问题；macOS ARM64 `.app` 已启动运行 5 秒并进入 Qt 事件循环，随后人工终止。
+- 2026-11-07：接入章节 `tar` 资源包中的图片：下载后仅提取图片并内嵌为 `data:` URI，正文图片不再依赖失效的相对路径；mock 增加有效 PNG 资源回归，13 项测试继续通过。
+- 2026-11-07：包含图片资源桥接的 macOS ARM64 `.app` 重新构建成功；最终 `.app --mock` 启动并进入事件循环 5 秒，随后人工终止。
+- 2026-11-07：构建脚本新增可分发压缩包，macOS 产物 `dist/WeFish-mac.zip` 已生成并通过 ZIP 清单检查；Windows 目标在 macOS 上按预期拒绝，CI 将上传 `WeFish-windows.zip`。
+- 2026-11-07：修正跨平台快捷键：macOS 使用 Command/Meta，Windows 使用 Ctrl；Qt 窗口快捷键和 pynput 系统级监听使用同一套平台映射，并新增 UI 回归检查。
+- 2026-11-07：快捷键修正后的 macOS ARM64 `.app` 重新构建成功，`WeFish-mac.zip` 通过 `unzip -t` 完整性检查；测试增至 14 项并全部通过。
+- 2026-11-07：接入 `keyring` OS 凭据存储：macOS 使用 Keychain、Windows 使用 Credential Manager；扫码/API Key/续期自动保存，启动自动恢复，内存适配器覆盖回归；测试增至 15 项，PyInstaller 日志确认已收录 keyring。
+- 2026-11-08：补齐 Web Reader 续期会话头：自动捕获并持久化 `x-wr-ticket`、`x-wrpa-0`，正文请求按会话发送；API Key 单独存在时明确拒绝正文访问；扫码会话会完整合并辅助 Cookie 并隔离旧账号；登录令牌 Cookie 原样保存；完整测试增至 18 项并通过，macOS ARM64 分发包重新构建并通过 ZIP 校验。
+- 2026-11-08：将书架、目录、正文、统计、想法和阅读上报移到后台 Qt 线程；增加线程安全的主线程回调、关闭回收和慢网络 UI 回归；正文补齐 EPUB `e_2` 样式分片；完整测试 19 项通过，macOS 打包应用启动无跨线程警告，分发 ZIP 通过校验。
+- 2026-11-08：扩展托盘操控：上一章、下一章、微信扫码和中性“工作文档”标题模式；UI 回归增至 20 项并全部通过。
+- 2026-11-08：包含上述全部改动的 macOS ARM64 `WeFish-mac.zip` 重新构建、ZIP 校验和 5 秒 `--mock` 启动检查通过。
+- 2026-11-08：正文滚动位置现在计算章节偏移、当前位置摘要和书籍进度，并纳入 Reader 上报 payload；新增滚动与 `co/sm` 回归，完整测试增至 21 项并通过。
+- 2026-11-08：增加独立“摘录/笔记”入口，读取 Gateway 返回的划线内容；完整测试保持 21 项通过。
+- 2026-11-08：进度闭环版本重新打包为 macOS ARM64 `WeFish-mac.zip`，通过 ZIP 校验及 5 秒 `--mock` 启动检查，未出现 Qt 跨线程警告。
+- 2026-11-08：重新扫码时不再发送旧账号的 `x-wr-ticket`/`x-wrpa-0`；21 项测试、macOS 打包、ZIP 校验和最终 `--mock` 启动检查全部通过。
+- 2026-11-08：抽出 `shortcut_modifier_for()` 并同时覆盖 macOS/Windows 映射；最新包重新构建，ZIP 校验和 `--mock` 启动检查通过。
+- 2026-11-08：持久化扫码返回的账号信息，并在界面区分 Web Reader 正文会话与 Gateway 书架授权状态；21 项测试继续通过。
+- 2026-11-08：账号状态版重新构建为 macOS ARM64 分发包，ZIP 校验和 5 秒 `--mock` 启动检查通过，无 Qt 跨线程警告。
+- 2026-11-08：扫码窗口增加原地“重新获取”二维码操作，二维码过期或网络失败后无需关闭窗口即可重试；完整回归增至 22 项并全部通过。
+- 2026-11-08：当前代码重新生成 macOS ARM64 `WeFish-mac.zip`，压缩包校验通过；打包应用 `--mock` 启动 5 秒无 Qt 跨线程警告。
+- 2026-11-08：修正二维码过期提示，明确引导点击窗口内“重新获取”；修正后的版本重新打包并通过同一组 22 项测试、ZIP 校验和 5 秒启动检查。
+- 2026-11-08：补齐 `MP_WXS_` 公众号书籍代理：Cookie 读取文章列表、提取嵌套正文、缓存到阅读窗并内嵌白名单图片；桌面 smoke 覆盖公众号书架项。
+- 2026-11-08：根据章节目录的 `paid/price` 字段增加服务端权益摘要，不猜测或伪造会员状态；新增许可证/来源入口，完整回归增至 27 项并全部通过。
+- 2026-11-08：公众号与权益改动重新生成 macOS ARM64 `WeFish-mac.zip`，ZIP 校验通过；打包应用 `--mock` 启动 5 秒无 Qt 跨线程警告；Windows 本机构建继续按宿主校验拒绝，CI 矩阵保持可运行路径。
+- 2026-11-08：关闭旧版进程后实际启动最终 `dist/WeFish.app`，扫码窗口显示二维码、等待扫码状态和“重新获取”按钮，确认交付包包含最新登录交互。
+- 2026-11-08：修正托盘“退出”在隐藏窗口模式下可能只隐藏不退出的问题；新增 `verify_live.py` 安全真实账号验收命令；完整回归增至 28 项并通过，最终包重新校验并启动 5 秒无 Qt 跨线程警告。
+- 2026-11-08：针对真实扫码后的 HTTP 401，修正 Skill `apikeyGet` 未开通时的处理：扫码 Cookie 先落盘、认证请求显式发送 Cookie、401 降级为“正文会话成功但 Skill 未开通”，并增加 `userInfo` 阶段错误信息；完整回归 30 项通过。
+- 2026-11-08：包含 401 修复的 macOS ARM64 包重新生成，ZIP 校验和 5 秒 `--mock` 启动检查通过；最终应用已重新显示新二维码等待复测。
+- 2026-11-08：将用户截图中的 HTTP 401 `Cgi Request Error` 固化为 mock 回归；Skill 401 仍保留 Cookie-only 登录，正文会话不再被 API Key 错误阻断；完整回归增至 31 项并通过，最终包重新打包并完成 ZIP/启动检查。
+- 2026-11-08：正文代理补齐 TXT `t_0/t_1` 自动回退，以及相对资源地址、ZIP/TAR 插图包解析；新增 2 项回归，完整测试增至 33 项并通过，macOS ARM64 包重新生成并通过 ZIP/5 秒启动检查。
+- 2026-11-08：将 `WeFish.spec` 改为按自身目录解析，避免提交本机绝对路径；macOS/Windows CI 增加构建 ZIP 完整性校验，并通过 Python 语法与 workflow 静态检查。
+- 2026-11-08：构建脚本改为直接使用可移植 `WeFish.spec`，避免 PyInstaller 从 `app.py` 重写开发机绝对路径；最新正文解析修复包已完成 ZIP/5 秒启动检查。
+- 2026-11-08：阅读页状态解析改为 JSON 边界解析，兼容脚本尾部变化；新增回归后完整测试增至 34 项并通过；构建脚本改用 `SPECPATH` 可移植 spec，最终包重新生成且源码 spec 不再含本机绝对路径。
+- 2026-11-08：修正摘录/想法接口：摘录改用 `/book/bookmarklist`，书友想法按高亮范围请求 `/book/readreviews`，个人想法补用 `/review/list/mine`；桌面弹窗区分“书友/我”，34 项回归继续通过。
+- 2026-11-08：包含摘录/想法接口修正的 macOS ARM64 包重新生成；ZIP 校验、可移植 spec 检查和 5 秒 `--mock` 启动检查全部通过，无 Qt 运行时告警。
+- 2026-11-08：修正 `pynput` 全局快捷键跨线程触碰 Qt 的问题，改为 Qt 信号回主线程并在退出时停止监听器；新增桌面回归后完整测试增至 35 项并通过，最终包重新生成且无运行时告警。
+- 2026-11-08：正式缓存隔离验证发现未授权首次启动会弹阻塞式 API Key 错误框；已改为保留主界面并显示未授权状态，扫码/读书链接入口可直接使用，服务端与网络错误仍会提示。
+- 2026-11-08：mock 与正式缓存目录隔离，迁移本轮 3 个合成缓存文件；无凭据正式包实启动显示“未授权”主界面而不弹阻塞框；35 项测试、ZIP 校验和 5 秒 `--mock` 启动检查全部通过。
+- 2026-11-08：补齐 PyInstaller 的 `pynput` macOS/Windows 键盘后端与 Keyring 后端；为 Python 3.9/macOS 增加 PyObjC `<10` 依赖约束，避免全局快捷键因隐式模块或 PyObjC 编译失败而从分发包缺失。
+- 2026-11-08：显式后端打包验证通过：PyInstaller warning 不再报告 `pynput`/`keyring.backends` 主模块缺失，打包应用 `--mock` 运行 5 秒无运行时告警；CI 增加同一后端发现门禁。
+- 2026-11-08：补齐全局 `Ctrl/Command + Alt + Left` 上一章快捷键，与已有右方向键形成左右翻章；保留托盘上一章/下一章操作。
+- 2026-11-08：左右翻章版本重新打包；后端 warning 门禁、ZIP 完整性、可移植 spec 和 5 秒 `--mock` 启动检查全部通过，最终应用已重启并置前扫码窗口。
+- 2026-11-08：扫码结果新增系统凭据库持久化状态；若 Keychain/Credential Manager 保存失败，界面会明确提示而不把内存登录误报成可永久恢复；401 Cookie-only 回归增加持久化断言。
+- 2026-11-08：包含登录持久化诊断的 macOS ARM64 包重新生成；后端 warning 门禁、ZIP 完整性、打包程序 5 秒启动和 35 项测试全部通过。
+- 2026-11-08：真实公网扫码入口实测可返回 36 位登录 UID；未扫码长轮询实测返回 `transport_pending`，不会把等待扫码误报为认证失败。
+- 2026-11-08：对照上游 QR 协议补齐 `NEED_OTP` 四位验证码输入、轮询转发与错误提示；新增验证码核心/UI 回归，完整测试增至 36 项。
+- 2026-11-08：包含 OTP 登录修复的 macOS ARM64 包重新生成；后端 warning 门禁、ZIP 完整性、打包程序 5 秒启动和 36 项测试全部通过。
+- 2026-11-08：摘录/笔记窗口补齐账号自己的想法展示；跨主机 Windows 打包保护和 macOS/Windows CI 产物静态检查通过。
+- 2026-11-08：新增无秘密输出的 Web Reader 会话诊断 `verify_web_session()`；37 项测试、macOS ARM64 打包、ZIP/warning 门禁和 5 秒启动检查通过。
+- 2026-11-08：将 HTTP 401 Skill 失败路径扩展为端到端回归：扫码后保留 Cookie、验证 Web 会话、打开正文链接并成功拉取章节；37 项测试继续通过。
+- 2026-11-08：对照上游 API reference 再次确认 Gateway 负责书架/元数据/统计等接口，章节正文必须走独立 Web Reader Cookie 流程；未发现可替代 Skill 的公开 Cookie 书架接口。
+- 2026-11-08：针对上游近期出现的 QR `getLoginInfo` HTTP 401/-2013，改为保持扫码等待并显示错误码；授权窗口新增只填 Web Reader Cookie 的兜底入口；38 项测试通过。
+- 2026-11-08：包含 QR 401 容错与手动 Cookie 入口的 macOS ARM64 包重新生成；38 项测试、真实公网 UID/长轮询、ZIP/warning 门禁和 5 秒启动检查通过。
+- 2026-11-08：按验收反馈将主界面改为 Electron Web UI 菜单栏阅读舱：390px 窄窗、默认隐藏、macOS 隐藏 Dock、托盘/菜单栏显示、全局 `Command/Ctrl + Alt + M` 唤出，并保留左右翻章、扫码、书架同步入口。
+- 2026-11-08：新增 `wefish_service.py` localhost bridge；浏览器 UI 不接触 Cookie/API Key，Python 内核继续负责 QR、Cookie-only 正文代理、Gateway 书架和 Reader 时长上报；新增目录、正文、扫码和阅读上报接口。
+- 2026-11-08：mock Electron 实际验收通过：书架 1 本、章节 3 章、正文 HTML 与内嵌图片加载成功，计时从 `00:00` 累加到 `00:51`，下一章正确切换为 `2/3`；接口验收同时确认 QR PNG、QR 登录交换和 `/web/book/read` 上报均成功。
+- 2026-11-08：新增 `WeFishService.spec`，PyInstaller 侧车 `dist/WeFishService` 的 `/api/health` mock 启动验收通过；Electron 依赖升级到 44.x，macOS ARM64 ZIP 产物为 `desktop/release/上班墨鱼-0.2.0-arm64-mac.zip`（约 133 MB）。DMG 仍受当前机器 Quartz/dmgbuild 环境影响，未作为本轮交付入口。
+- 2026-11-08：将 macOS 构建脚本改为 `electron-builder --mac dir` + `ditto`，绕开本机 7zip/DMG 镜像问题；当前产物为 `desktop/release/上班墨鱼-mac.zip`，ZIP 校验通过。
+- 2026-11-08：从最终 `.app` 复制出的等价运行副本完成打包运行验收：Electron 主进程、GPU/网络/Renderer、用户目录侧车均启动；书架 1 本、3 章正文、计时 `00:00 → 00:23`、翻章 `1/3 → 2/3` 均可见。原始下载目录在本机被 `com.apple.provenance` 执行属性拦截，属于本机 macOS 执行策略；清除该属性或普通复制后运行正常。
+- 2026-11-08：新增 Electron `--self-test`：启动侧车并检查 `/api/health`，输出 `WEFISH_SELF_TEST=ok` 后退出；最终 macOS 打包副本连续冷启动两次均通过，修复了侧车目录符号链接在第二次启动时报 `EEXIST` 的重启 bug；CI 现在会对 macOS/Windows 原生打包目录执行同一 smoke test。
+- 2026-11-08：最终 macOS ZIP 重新封装完成；38 项 Python 回归、Electron 入口语法、工作流 YAML、ZIP 完整性全部通过，最终 app 副本连续冷启动两次均为 `WEFISH_SELF_TEST=ok` 且退出码为 0。
+- 2026-11-08：修正 Electron 侧车升级复制和重复启动：按版本/文件时间戳切换用户目录中的服务副本，并用单实例锁聚焦已有阅读舱；修改后 38 项回归、最终 ZIP 校验和连续两次 `WEFISH_SELF_TEST=ok` 均通过。
+- 2026-11-08：默认 `npm run package` 改为按宿主系统选择 Electron 目标，避免 macOS 侧车被误装进 Windows ZIP；macOS 入口实际封装成功，最终副本连续两次 `WEFISH_SELF_TEST=ok`。
+- 2026-11-08：打包脚本改为自动寻找实际 macOS `.app` 目录，覆盖 Intel/Apple Silicon；显式跨宿主目标会以错误码 2 拒绝。最终 38 项回归、workflow YAML、语法检查、ZIP 校验和双次冷启动全部通过。
+- 2026-11-08：Electron 阅读舱补齐“阅读数据”入口：阅读时长、阅读天数、笔记数、当前书籍权益摘要、本章摘录、书友想法和我的想法；mock bridge 接口验收通过，最终包重新生成并双次冷启动通过。新增 `--show` 仅供 UI 验收，正常启动仍默认隐藏。
+- 2026-11-08：Electron 主交付路径补齐“工作文档标题”伪装：托盘右键勾选与 `Command/Ctrl + Alt + T` 切换，关闭后恢复 WeFish 标题；最终 38 项测试、workflow/语法/ZIP 校验和双次冷启动通过。
+- 2026-11-08：CI macOS 分支改用宿主感知 `npm run package:mac` 并自动定位 `.app`，工作文档模式同步切换托盘提示；workflow YAML、38 项回归、最终 ZIP 和双次冷启动再次通过。
+- 2026-11-08：Electron 阅读进度上报补齐正文滚动偏移、当前位置摘要和章节内全书进度；切章会重置位置，最终包重新生成，38 项回归、ZIP 校验和双次冷启动通过。
+- 2026-11-08：新增跨平台 `desktop/smoke_package.py`/`run_smoke.js`，按宿主启动真实打包程序并检查侧车健康；当前 macOS 最终包实际输出 `WEFISH_SELF_TEST=ok`、`packaged-smoke-ok`，Windows CI 将复用同一入口。
+- 2026-11-08：修正真实模式启动被钥匙串阻塞：凭据恢复改为临时 client 后台加载，bridge 先响应并暴露 `credentialsLoading`；最终 app 不加 `--mock` 也通过 `WEFISH_SELF_TEST=ok`，`/api/state` 在恢复等待时可返回。另修正 PyObjC 无障碍符号缺失导致的 pynput 线程异常，38 项回归保持通过。
+- 2026-11-08：Electron 主路径补齐真正的小窗模式：托盘勾选与 `Command/Ctrl + Alt + P` 切换 390×270、88% 透明窗口，恢复时回到 390×650 阅读舱；最终包 mock/真实模式 smoke 均通过。
+- 当前风险：真实 API Key/Cookie 尚未在本机账号上完成正文实读闭环；Windows runner 尚未实际运行；pynput 在 macOS 需要用户授予辅助功能权限；macOS ZIP 未签名，首次打开可能需要系统允许。
+- 2026-11-09：`verify_live.py` 增加凭据库有界等待；Keychain/Credential Manager 无响应时会在指定秒数内返回 `credential_store=busy`，不再让扫码后诊断命令无限挂起。38 项回归、Electron mock 打包 smoke、服务 `/api/health`/`/api/state` 和 ZIP 完整性复核通过；未改变“真实账号正文实读”和 Windows 原生 runner 尚未验证的风险边界。
+- 2026-11-09：本地 bridge 的正式凭据恢复也改为 5 秒有界等待，超时后 `/api/state` 返回 `credentialsError=true`，Electron 显示“登录恢复失败，请重新扫码”；新增 2 项服务回归，完整测试增至 40 项。PyInstaller 侧车、Electron macOS ARM64 包重新生成；最终包 smoke 为 `WEFISH_SELF_TEST=ok`，打包侧车等待 5.7 秒后确认 `credentialsLoading=false / credentialsError=true`。
+- 2026-11-09：修正超时错误后的重新扫码状态清理；点击扫码或手动授权会清除旧 `credentialsError`，成功登录后不会被旧提示覆盖。最终 macOS ZIP 重新封装，40 项测试、`packaged-smoke-ok`、ZIP 校验和有界诊断均通过。
+- 2026-11-09：修正小窗失焦行为；普通阅读舱仍点击外部收起，390×270 小窗保持置顶并继续计时，符合切换办公软件后藏在角落阅读的目标。40 项测试、macOS Electron 重新封装、`packaged-smoke-ok` 和 ZIP 校验通过。
+- 2026-11-09：Electron `--mock --self-test` 扩展为封装后完整主链路验收：书架、3 章目录、正文、阅读时长上报、统计和 QR 交换均通过；修复自测 JSON 请求体长度和统计接口方法问题。最终 macOS ZIP 的完整 smoke 输出 `WEFISH_SELF_TEST=ok / packaged-smoke-ok`。
+- 2026-11-09：新增退出前阅读时长 flush；关闭应用时先把不足 60 秒的剩余时长和当前位置发到 `/web/book/read`，最多等待 2 秒再关闭侧车，避免最后一段阅读丢失。40 项测试、source mock self-test、macOS 打包 smoke 和 ZIP 校验通过。
+- 2026-11-09：Electron 阅读舱改为无滚动分页：章节内容拆成页模型，章节选择器和位置滑杆支持快速定位，默认预加载后两页并预取下一章首屏；新增逐行显示、0.5–10 秒换行间隔和 Cmd/Ctrl+Alt 方向键操控。
+- 2026-11-09：修正阅读数据接口契约：renderer 使用 GET `/api/stats`，bridge 增加结构化阅读数据错误；新增 GET `/api/reader/progress`，mock 保存并回读最近一次进度、章节偏移和阅读时长；断网上报进入 renderer 本地待同步队列。
+- 2026-11-09：macOS 菜单栏托盘标题与 Windows 托盘提示接入逐行文本 IPC；新增 4 项 bridge 回环测试和 2 项分页 Node 测试，当前 Python 回归 45 项、Node 分页测试 2 项、Electron mock self-test 全部通过。
+- 2026-11-09：重新对照参考项目现行 API 文档；其公开 Skill/API 参考只列出章节 `paid/price` 权益字段，没有会员状态接口，故 WeFish 继续显示服务端章节权益摘要，不调用未经文档确认的私有支付接口或伪造会员状态。
+- 2026-11-09：补充 Web Reader Cookie-only 书架回退：无 Skill API Key 时调用同源 `/web/shelf/sync`，扫码后可直接同步基础书架；新增回归，完整测试增至 41 项，source mock self-test 通过。统计、笔记和想法仍明确依赖官方 Gateway 能力。
+- 2026-11-09：分页/逐行/云同步改动后的完整回归为 Python 47 项、Node 分页 2 项；`npm run smoke:mock` 输出 `WEFISH_RENDERER_SELF_TEST=ok pages=24 preloaded=2` 与 `WEFISH_SELF_TEST=ok`。
+- 2026-11-09：重新构建 PyInstaller macOS ARM64 侧车与 Electron macOS ZIP；`npm run smoke:package` 输出 `packaged-smoke-ok`，`desktop/release/上班墨鱼-mac.zip` 通过 `unzip -t`。Windows 原生包仍需 Windows runner 验证。
+- 2026-11-09：补齐会员权益只读同步：从已登录 Web Reader bootstrap 的 `reader.memberCardSummary` 归一化会员状态、剩余时间和卡类型；空摘要保持“状态未返回”，不猜测会员状态。新增 3 项回归，Python 测试增至 50 项；重新构建 PyInstaller 侧车、macOS ZIP，打包后会员面板、分页、逐行、阅读数据和进度 smoke 全部通过。
+- 2026-11-09：将 Electron self-test 扩展到 50% 位置跳转，实际跨到第二章并落在章节中间页；重新封装 macOS ZIP，打包后分页、预加载、无滚动、逐行、位置跳转、会员面板和阅读数据 smoke 全部通过。
+- 2026-11-09：Windows Actions 分支改为调用 `npm run package:win:zip`，与本地 Windows 构建脚本统一；macOS 侧验证了跨宿主误用会明确拒绝，Windows 原生 runner 仍待实际运行。
+- 2026-11-09：修正真实账号验收入口：Electron 侧车与 `verify_live.py` 统一读取 `WEREAD_API_KEY`/`WEREAD_COOKIE`，并增加会员、云进度和阅读数据诊断；新增环境凭据回归，Python 测试增至 51 项。
+- 2026-11-09：重新构建含环境凭据修复的 PyInstaller macOS ARM64 侧车和 Electron ZIP；最终包 `packaged-smoke-ok`，`WEFISH_RENDERER_SELF_TEST=ok pages=24 preloaded=2`，ZIP 完整性通过。
+- 2026-11-09：修正阅读报告竞态：切换章节或拖动位置前先保存旧章节，退出时等待正在发送的报告并补发本地待同步队列，避免最后一段阅读时长和位置丢失；源码 mock、51 项 Python 回归和 Electron smoke 通过。
+- 2026-11-09：为阅读报告和待同步队列增加可控请求截止时间；退出 flush 使用 1.7 秒总预算，网络卡住时保留本地队列并按已有机制稍后重试，不再让单个请求无限占住退出流程。51 项 Python 回归、Electron mock self-test 通过。
+- 2026-11-09：重新封装含退出上报截止时间修复的 macOS ZIP；`npm run smoke:package` 输出 `WEFISH_RENDERER_SELF_TEST=ok pages=24 preloaded=2`、`WEFISH_SELF_TEST=ok`、`packaged-smoke-ok`，`unzip -t` 无错误。
+- 2026-11-09：补齐桌面分发的许可证入口：托盘菜单新增“关于 / 许可证”，最终 app 资源包含 `licenses/LICENSE` 与 `licenses/NOTICE`；重新打包后 mock self-test、封装 smoke 与 ZIP 校验通过。
+- 2026-11-09：修正短时阅读的进度同步边界；切页、切章、拖动位置和退出时即使累计时长为 0，也会强制上报当前位置与章节偏移，避免“读了几秒就跳走”时云端没有位置记录。
+- 2026-11-09：位置滑杆跳转完成后立即再次上报新章节/页面位置，确保拖动到后文后即使马上关闭应用，云端保存的是目标位置而非跳转前位置。
+- 2026-11-09：最终回归完成：51 项 Python 测试、2 项分页 Node 测试、Electron mock self-test 通过；macOS ARM64 ZIP 重新封装，包含许可证资源，封装 smoke 与 `unzip -t` 均通过。
+- 2026-11-09：补齐 Electron 包作者元数据，消除 electron-builder 的 `author is missed` 构建警告；Windows/macOS 两套宿主构建配置保持一致。
+- 2026-11-09：作者元数据修复后的 macOS 包 smoke 与 ZIP 校验再次通过，构建日志不再出现 `author is missed`。
+- 2026-11-09：凭据恢复状态完成后清除旧轮询定时器，避免登录状态恢复时重复请求和重复 UI 更新。
+- 2026-11-09：凭据轮询修复后的最终回归通过：51 项 Python、分页测试、Electron mock self-test、macOS 封装 smoke 和 ZIP 完整性均通过。
+- 2026-11-09：修正云端位置恢复：章节偏移现在恢复到对应页内的逐行位置，页边界不会错误落回上一页；mock self-test 增加远端偏移 160 的恢复断言。
+- 2026-11-09：位置恢复回归调整为第一页中部偏移 60，确认页内行位置恢复、下一页、逐行和 50% 跳转可连续执行；Electron mock self-test 通过。
+- 2026-11-09：包含云端页内位置恢复的 macOS ARM64 包重新封装；封装 self-test 输出 `WEFISH_RENDERER_SELF_TEST=ok pages=24 preloaded=2`、`WEFISH_SELF_TEST=ok`、`packaged-smoke-ok`，ZIP 完整性通过。
+- 2026-11-09：Cookie-only 阅读链接现在携带并恢复 bootstrap 中的章节偏移；新增 mock/核心回归，避免没有 Skill API Key 时只能恢复章节、不能恢复章节内位置。
+- 2026-11-09：Cookie-only 位置恢复修复后的 macOS ARM64 包重新封装；51 项 Python 回归、Electron mock self-test、封装 smoke 和 ZIP 完整性均通过。
+- 2026-11-09：新增 `ACCEPTANCE.md`，按用户需求列出功能入口、实际验证证据、可重复命令和真实账号/Windows/Gatekeeper 的外部验收门槛。
+- 2026-11-09：验收清单补充 GET `/api/reader/progress` 拉取证据，并明确 Windows 条目引用的是 Actions workflow 配置，未将其误报为本机已运行。
+- 2026-11-09：跨平台打包脚本增加宿主匹配的 PyInstaller 侧车和许可证文件前置检查；Windows runner 缺少 `WeFishService.exe` 时会在 electron-builder 前直接给出可执行修复提示。
+- 2026-11-09：打包前置检查在 macOS ARM64 真实封装路径通过；mock self-test、封装 smoke、许可证资源和 ZIP 完整性继续通过。
+- 2026-11-09：跨宿主保护回归通过：macOS 上调用 `npm run package:win:zip` 以预期退出码 2 拒绝，未生成伪 Windows 包；现有 macOS 包 smoke 和 ZIP 校验仍通过。
+- 2026-11-09：补齐 Cookie-only 云端进度回退：无 Gateway Key 时从 Web Reader bootstrap 读取章节偏移、摘要和阅读时长，Web Shelf 只作为无快照时的降级；新增核心回归。
+- 2026-11-09：Cookie-only 进度回退后的最终 macOS ARM64 包重新封装；52 项 Python 回归、Electron mock/self-test、封装 smoke、许可证资源和 ZIP 完整性均通过。
+- 2026-11-09：新增 bridge 层 Cookie-only 进度回退契约回归：模拟 Gateway 认证失败后必须切换到 Web Reader 精确快照；Python 回归增至 53 项。
+- 2026-11-09：验收清单同步更新为 53 项 Python 回归，保持功能证据与当前测试数量一致。
+- 2026-11-09：验收文档同步更新为当前 52 项 Python 回归，修正交付记录与实际测试数量不一致的问题。
+- 2026-11-09：验收清单同步补充 Cookie-only 进度回退，并将对应回归数量更新为 52 项。
+- 2026-11-09：NOTICE 补充上游 `finlater/weread.koplugin` 的明确仓库地址，便于分发包中的来源追溯。
+- 2026-11-09：含上游地址的 NOTICE 已进入 macOS ZIP；封装 self-test、许可证资源检查和 ZIP 完整性通过。
+- 2026-11-09：README 同步说明无 Gateway Key 时的 Web Reader 精确进度回退；桌面 UI 实际点按验收因本机锁屏未执行，代码级 self-test 不受影响。
+- 2026-11-09：验收清单补充锁屏限制，明确桌面点按验收与代码/封装 smoke 的证据边界。
+

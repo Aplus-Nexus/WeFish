@@ -1,0 +1,1015 @@
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  baseUrl: '',
+  visible: true,
+  currentBook: null,
+  chapters: [],
+  chapterIndex: -1,
+  pages: [],
+  pageIndex: 0,
+  pageCache: new Map(),
+  chapterHtmlCache: new Map(),
+  preloadedPages: [],
+  loadGeneration: 0,
+  elapsed: 0,
+  reportedElapsed: 0,
+  reading: false,
+  timer: null,
+  pollTimer: null,
+  qrUid: '',
+  entitlement: {},
+  membership: { status: 'unknown', source: 'web-reader-bootstrap', hasSnapshot: false },
+  chapterOffset: 0,
+  chapterSummary: '',
+  bookProgress: 0,
+  chapterTextLength: 0,
+  lines: [],
+  lineIndex: 0,
+  lineAuto: true,
+  lineTimer: null,
+  lineIntervalMs: 1000,
+  syncStatus: 'idle',
+  remoteProgress: null,
+  pendingReports: [],
+  reportInFlight: false,
+  flushStarted: false,
+  restoreTimer: null,
+};
+
+function formatDuration(seconds) {
+  const value = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(value / 60);
+  const hours = Math.floor(minutes / 60);
+  const mm = String(minutes % 60).padStart(2, '0');
+  const ss = String(value % 60).padStart(2, '0');
+  return hours ? `${String(hours).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function formatReadingTime(seconds) {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  return hours ? `${hours} 小时 ${minutes} 分钟` : `${minutes} 分钟`;
+}
+
+function setStatus(message, kind = '') {
+  $('status-text').textContent = message;
+  $('status-dot').className = `status-dot ${kind}`.trim();
+}
+
+function toast(message, error = false) {
+  const node = $('toast');
+  node.textContent = message;
+  node.style.borderColor = error ? 'rgba(242, 124, 92, .5)' : '';
+  node.style.background = error ? '#351d1a' : '';
+  node.style.color = error ? '#f7ad96' : '';
+  node.classList.add('visible');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => node.classList.remove('visible'), 3400);
+}
+
+async function waitForBridge() {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const url = await window.wefish.bridgeUrl();
+    if (url) return url;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('本地阅读服务没有启动');
+}
+
+async function api(route, options = {}) {
+  if (!state.baseUrl) throw new Error('本地阅读服务尚未就绪');
+  const { timeoutMs = 0, ...requestOptions } = options;
+  const controller = timeoutMs > 0 && typeof AbortController !== 'undefined' && !requestOptions.signal
+    ? new AbortController()
+    : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(`${state.baseUrl}${route}`, {
+      ...requestOptions,
+      ...(controller ? { signal: controller.signal } : {}),
+      headers: { 'Content-Type': 'application/json', ...(requestOptions.headers || {}) },
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const payload = contentType.includes('text/html') ? await response.text() : await response.json();
+    if (!response.ok) {
+      const message = typeof payload === 'string'
+        ? payload
+        : (payload.message || payload.error || payload.code || `请求失败（${response.status}）`);
+      throw new Error(message || `请求失败（${response.status}）`);
+    }
+    return payload;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function getApi(route) {
+  return api(route, { method: 'GET' });
+}
+
+function jsonBody(value) {
+  return { method: 'POST', body: JSON.stringify(value || {}) };
+}
+
+function normalizeBook(book) {
+  const value = book && typeof book === 'object' ? book : {};
+  return {
+    ...value,
+    bookId: String(value.bookId || value.book_id || ''),
+    title: String(value.title || value.bookName || value.name || value.bookId || '未命名书籍'),
+    author: String(value.author || value.authorName || ''),
+    progress: Number(value.progress || 0),
+  };
+}
+
+function renderShelf(books) {
+  const list = $('shelf-list');
+  list.replaceChildren();
+  if (!books.length) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = '还没有拿到书架。可以先打开阅读链接，或确认 Skill 已启用。';
+    list.appendChild(empty);
+    return;
+  }
+  books.forEach((rawBook) => {
+    const book = normalizeBook(rawBook);
+    const button = document.createElement('button');
+    button.className = 'shelf-item';
+    button.innerHTML = `<span><strong></strong><small></small></span><span>→</span>`;
+    button.querySelector('strong').textContent = book.title;
+    button.querySelector('small').textContent = [book.author, `${Math.round(book.progress)}%`].filter(Boolean).join(' · ');
+    button.addEventListener('click', () => loadBook(book));
+    list.appendChild(button);
+  });
+}
+
+async function openShelf() {
+  $('shelf-drawer').setAttribute('aria-hidden', 'false');
+  await loadShelf();
+}
+
+function closeShelf() {
+  $('shelf-drawer').setAttribute('aria-hidden', 'true');
+}
+
+async function loadShelf() {
+  setStatus('同步书架中…');
+  try {
+    const data = await api('/api/shelf', jsonBody());
+    const books = Array.isArray(data.books) ? data.books : [];
+    renderShelf(books.map(normalizeBook));
+    setStatus(`${books.length} 本书已就绪`, 'active');
+    toast(books.length ? `书架已同步，共 ${books.length} 本` : '书架为空');
+  } catch (error) {
+    renderShelf([]);
+    setStatus('书架需要授权', 'warn');
+    toast(error.message, true);
+  }
+}
+
+function safeReaderHtml(source) {
+  const documentFragment = new DOMParser().parseFromString(String(source || ''), 'text/html');
+  documentFragment.querySelectorAll('script, iframe, object, embed, form, input, button').forEach((node) => node.remove());
+  documentFragment.querySelectorAll('*').forEach((node) => {
+    [...node.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+      if (name.startsWith('on') || (name === 'href' && /^javascript:/i.test(value))) node.removeAttribute(attribute.name);
+      if ((name === 'src' || name === 'href') && !/^(https?:|data:|#|\/)/i.test(value)) node.removeAttribute(attribute.name);
+    });
+  });
+  return documentFragment.body;
+}
+
+function updateReaderHeader(chapter) {
+  const book = state.currentBook || {};
+  $('book-kicker').textContent = book.isMp ? '公众号文章' : `阅读 · ${state.chapterIndex + 1}/${Math.max(state.chapters.length, 1)}`;
+  $('book-title').textContent = chapter?.title || book.title || '未命名书籍';
+  const syncText = state.syncStatus === 'pending' ? '待同步' : (state.syncStatus === 'synced' ? '已同步' : '本地阅读');
+  $('book-meta').textContent = [book.title, book.author, `${Math.round(state.bookProgress || book.progress || 0)}%`, syncText].filter(Boolean).join(' · ');
+  const progress = state.bookProgress || (state.chapters.length > 1 ? (state.chapterIndex / (state.chapters.length - 1)) * 100 : Number(book.progress || 0));
+  $('progress-bar').style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  $('page-label').textContent = state.pages.length ? `${state.pageIndex + 1} / ${state.pages.length}` : '0 / 0';
+  $('position-slider').value = String(Math.round(Math.max(0, Math.min(100, progress))));
+}
+
+function readerPosition() {
+  const page = state.pages[state.pageIndex] || { text: '', startOffset: 0, endOffset: 0 };
+  const lines = state.lines.length ? state.lines : [page.text || ''];
+  const lineFraction = lines.length > 1 ? state.lineIndex / Math.max(1, lines.length - 1) : 0;
+  const offset = Math.max(0, Math.min(state.chapterTextLength || page.endOffset || 0,
+    Math.floor(page.startOffset + (page.text || '').length * lineFraction)));
+  const summary = String(lines[Math.min(state.lineIndex, lines.length - 1)] || page.text || '').slice(0, 20);
+  const chapterCount = Math.max(state.chapters.length, 1);
+  const chapterFraction = state.chapterTextLength > 0 ? offset / state.chapterTextLength : 0;
+  const progress = ((state.chapterIndex + chapterFraction) / chapterCount) * 100;
+  return { offset, summary, progress: Math.max(0, Math.min(100, progress)) };
+}
+
+function updateReaderPosition() {
+  if (state.chapterIndex < 0 || !state.currentBook || state.currentBook.isMp) return;
+  const position = readerPosition();
+  state.chapterOffset = position.offset;
+  state.chapterSummary = position.summary;
+  state.bookProgress = position.progress;
+  $('progress-bar').style.width = `${position.progress}%`;
+  $('position-slider').value = String(Math.round(position.progress));
+  $('page-label').textContent = `${state.pageIndex + 1} / ${state.pages.length}`;
+  updateReaderHeader(state.chapters[state.chapterIndex]);
+}
+
+function setTrayLine(text) {
+  if (window.wefish && typeof window.wefish.setLine === 'function') window.wefish.setLine(String(text || ''));
+}
+
+function currentPageText() {
+  return String(state.pages[state.pageIndex]?.text || '').trim();
+}
+
+function updateLineDisplay() {
+  const pageText = currentPageText();
+  const compact = window.innerHeight < 400;
+  const width = compact ? 18 : 28;
+  state.lines = WeFishPagination.splitLines(pageText, width);
+  state.lineIndex = Math.max(0, Math.min(state.lineIndex, Math.max(0, state.lines.length - 1)));
+  const line = state.lines[state.lineIndex] || pageText || '阅读器';
+  setTrayLine(line);
+  const button = $('line-toggle');
+  button.classList.toggle('active', state.lineAuto);
+  button.textContent = state.lineAuto ? '行▶' : '行Ⅱ';
+  updateReaderPosition();
+}
+
+function resetLineTimer() {
+  clearInterval(state.lineTimer);
+  state.lineTimer = null;
+  if (!state.lineAuto) return;
+  state.lineTimer = setInterval(() => {
+    if (state.reading) nextLine(1, true);
+  }, state.lineIntervalMs);
+}
+
+function setLineAuto(enabled) {
+  state.lineAuto = Boolean(enabled);
+  resetLineTimer();
+  updateLineDisplay();
+}
+
+function nextLine(delta = 1, fromTimer = false) {
+  if (!state.pages.length) return;
+  const next = state.lineIndex + delta;
+  if (next >= 0 && next < state.lines.length) {
+    state.lineIndex = next;
+    updateLineDisplay();
+    return;
+  }
+  if (delta > 0 && state.pageIndex < state.pages.length - 1) {
+    showPage(state.pageIndex + 1);
+  } else if (delta < 0 && state.pageIndex > 0) {
+    showPage(state.pageIndex - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+  } else if (!fromTimer && delta > 0) {
+    goNextChapter();
+  }
+}
+
+function showPage(index, options = {}) {
+  if (!state.pages.length) return;
+  state.pageIndex = Math.max(0, Math.min(Number(index) || 0, state.pages.length - 1));
+  const page = state.pages[state.pageIndex];
+  const body = $('reader-body');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'reader-page';
+  wrapper.innerHTML = page.html;
+  body.replaceChildren(wrapper);
+  state.lineIndex = options.lineIndex === Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : Math.max(0, Number(options.lineIndex) || 0);
+  state.pageCache.set(state.pageIndex, page);
+  updateLineDisplay();
+  preloadAroundPage();
+}
+
+function preloadAroundPage() {
+  state.preloadedPages = [];
+  for (let index = state.pageIndex + 1; index <= Math.min(state.pages.length - 1, state.pageIndex + 2); index += 1) {
+    state.pageCache.set(index, state.pages[index]);
+    state.preloadedPages.push(index);
+  }
+  const nextChapter = state.chapterIndex + 1;
+  if (nextChapter < state.chapters.length) fetchChapterHtml(nextChapter).catch(() => {});
+}
+
+async function fetchChapterHtml(index) {
+  if (!state.currentBook || index < 0 || index >= state.chapters.length) return '';
+  if (state.chapterHtmlCache.has(index)) return state.chapterHtmlCache.get(index);
+  const chapter = state.chapters[index];
+  const html = await api('/api/reader/chapter', jsonBody({
+    bookId: state.currentBook.bookId,
+    chapterUid: chapter.chapterUid,
+  }));
+  state.chapterHtmlCache.set(index, String(html || ''));
+  return String(html || '');
+}
+
+async function loadChapter(index, resume = null) {
+  if (!state.currentBook || !state.chapters.length) return;
+  await waitForReportIdle(900);
+  await reportReading(true);
+  const nextIndex = Math.max(0, Math.min(index, state.chapters.length - 1));
+  const chapter = state.chapters[nextIndex];
+  const generation = ++state.loadGeneration;
+  state.chapterIndex = nextIndex;
+  if ($('chapter-jump')) $('chapter-jump').value = String(nextIndex);
+  state.pages = [];
+  state.pageIndex = 0;
+  state.pageCache.clear();
+  state.chapterOffset = 0;
+  state.chapterSummary = '';
+  state.bookProgress = 0;
+  updateReaderHeader(chapter);
+  setStatus('加载正文中…');
+  try {
+    const html = await fetchChapterHtml(nextIndex);
+    if (generation !== state.loadGeneration) return;
+    const body = safeReaderHtml(html);
+    state.pages = WeFishPagination.paginateFragment(body, {
+      container: $('reader-body'),
+      compact: window.innerHeight < 400,
+    });
+    state.chapterTextLength = Math.max(1, state.pages[state.pages.length - 1]?.endOffset || 1);
+    const resumeOffset = Math.max(0, Number(resume?.chapterOffset || 0));
+    state.pageIndex = state.pages.findIndex((page, index) => (
+      resumeOffset >= page.startOffset
+      && (resumeOffset < page.endOffset || index === state.pages.length - 1)
+    ));
+    if (state.pageIndex < 0) state.pageIndex = 0;
+    state.bookProgress = Number(resume?.progress || state.currentBook.progress || 0);
+    state.syncStatus = resume ? 'synced' : 'idle';
+    let resumeLineIndex = 0;
+    if (resume && state.pages[state.pageIndex]?.text) {
+      const page = state.pages[state.pageIndex];
+      const lineWidth = window.innerHeight < 400 ? 18 : 28;
+      const lines = WeFishPagination.splitLines(page.text, lineWidth);
+      const fraction = Math.max(0, Math.min(1,
+        (resumeOffset - page.startOffset) / Math.max(1, page.text.length),
+      ));
+      resumeLineIndex = Math.floor(fraction * Math.max(0, lines.length - 1));
+    }
+    showPage(state.pageIndex, { lineIndex: resumeLineIndex });
+    updateReaderPosition();
+    state.reading = true;
+    setStatus('正在阅读', 'active');
+    resetLineTimer();
+  } catch (error) {
+    state.reading = false;
+    setStatus('正文暂时不可用', 'warn');
+    $('reader-body').innerHTML = '<div class="empty-state"><div class="empty-glyph">!</div><h2>这章还没打开</h2><p></p></div>';
+    $('reader-body p').textContent = error.message;
+    toast(error.message, true);
+  }
+}
+
+async function loadBook(rawBook) {
+  const book = normalizeBook(rawBook);
+  if (!book.bookId) return toast('这本书缺少 bookId', true);
+  closeShelf();
+  state.currentBook = book;
+  state.chapters = [];
+  state.chapterIndex = -1;
+  state.pages = [];
+  state.pageIndex = 0;
+  state.pageCache.clear();
+  state.chapterHtmlCache.clear();
+  state.entitlement = {};
+  state.membership = { status: 'unknown', source: 'web-reader-bootstrap', hasSnapshot: false };
+  state.chapterOffset = 0;
+  state.chapterSummary = '';
+  state.bookProgress = 0;
+  state.remoteProgress = null;
+  state.syncStatus = 'idle';
+  setStatus('打开书籍…');
+  try {
+    const data = await api('/api/reader/catalog', jsonBody({ bookId: book.bookId }));
+    state.entitlement = data.entitlement || {};
+    state.chapters = (data.chapters || []).filter((chapter) => Number(chapter.wordCount || 1) > 0 && chapter.title !== '封面');
+    if (!state.chapters.length) throw new Error('没有找到可读章节');
+    renderChapterJump();
+    if (!book.isMp) {
+      try {
+        const rights = await api('/api/reader/entitlement', jsonBody({
+          bookId: book.bookId,
+          chapterUid: state.chapters[0].chapterUid,
+        }));
+        state.membership = rights.membership || state.membership;
+      } catch (_) {
+        // Older Web Reader bootstrap responses may omit the optional
+        // membership snapshot; readable content remains usable.
+      }
+    }
+    let remote = null;
+    if (!book.isMp) {
+      try {
+        remote = await getApi(`/api/reader/progress?bookId=${encodeURIComponent(book.bookId)}`);
+        state.remoteProgress = remote;
+      } catch (_) {
+        // A cookie-only session can read while the optional Gateway progress
+        // endpoint is unavailable. Keep the shelf position and show local
+        // status instead of turning a partial authorization into a login error.
+      }
+    }
+    const linkResume = !book.isMp && book.readerUrl && (book.chapterUid || Number(book.chapterOffset || 0) > 0)
+      ? book
+      : null;
+    const resume = remote || linkResume;
+    const currentUid = String(resume?.chapterUid || book.chapterUid || '');
+    const currentIndex = state.chapters.findIndex((chapter) => String(chapter.chapterUid) === currentUid);
+    await loadChapter(currentIndex >= 0 ? currentIndex : 0, resume);
+  } catch (error) {
+    state.reading = false;
+    setStatus('正文需要 Web Reader Cookie', 'warn');
+    toast(`${error.message}；请扫码后重试`, true);
+    showQR();
+  }
+}
+
+function renderChapterJump() {
+  const select = $('chapter-jump');
+  select.replaceChildren();
+  const first = document.createElement('option');
+  first.value = '';
+  first.textContent = '章节';
+  select.appendChild(first);
+  state.chapters.forEach((chapter, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `${index + 1}. ${chapter.title || `第${index + 1}章`}`;
+    select.appendChild(option);
+  });
+  select.value = state.chapterIndex >= 0 ? String(state.chapterIndex) : '';
+}
+
+function insightCard(label, value, detail = '') {
+  const card = document.createElement('div');
+  card.className = 'insight-card';
+  const title = document.createElement('span');
+  title.className = 'insight-label';
+  title.textContent = label;
+  const main = document.createElement('strong');
+  main.textContent = value;
+  const note = document.createElement('small');
+  note.textContent = detail;
+  card.append(title, main, note);
+  return card;
+}
+
+function membershipLabel(snapshot = state.membership) {
+  const status = snapshot?.status;
+  if (status === 'active') return '会员有效';
+  if (status === 'inactive') return '会员已失效';
+  if (status === 'not-applicable') return '公众号不适用';
+  return '状态未返回';
+}
+
+function membershipDetail(snapshot = state.membership) {
+  const remaining = Number(snapshot?.remainingSeconds);
+  if (Number.isFinite(remaining) && remaining > 0) {
+    return `已从 Web Reader 同步 · 约 ${Math.ceil(remaining / 86400)} 天`;
+  }
+  if (snapshot?.hasSnapshot) return '已从 Web Reader 同步';
+  return '以账号实际可读权益为准';
+}
+
+function insightSection(title, rows, emptyText) {
+  const section = document.createElement('section');
+  section.className = 'insight-section';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  section.appendChild(heading);
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'insight-empty';
+    empty.textContent = emptyText;
+    section.appendChild(empty);
+    return section;
+  }
+  const list = document.createElement('div');
+  list.className = 'insight-list';
+  rows.slice(0, 8).forEach((row) => {
+    const item = document.createElement('div');
+    item.className = 'insight-row';
+    const content = document.createElement('p');
+    content.textContent = String(row.markText || row.content || row.abstract || row.range || '');
+    item.appendChild(content);
+    const chapter = row.chapterName || row.chapterUid;
+    if (chapter !== undefined && chapter !== null && String(chapter)) {
+      const meta = document.createElement('small');
+      meta.textContent = `章节 ${chapter}`;
+      item.appendChild(meta);
+    }
+    list.appendChild(item);
+  });
+  section.appendChild(list);
+  return section;
+}
+
+async function showInsights() {
+  openModal('<p class="insights-loading">正在读取阅读数据…</p>', '阅读数据');
+  const statsResult = await Promise.allSettled([
+    getApi('/api/stats'),
+    state.currentBook && !state.currentBook.isMp && state.chapterIndex >= 0
+      ? api('/api/reader/annotations', jsonBody({
+        bookId: state.currentBook.bookId,
+        chapterUid: state.chapters[state.chapterIndex].chapterUid,
+      }))
+      : Promise.resolve(null),
+  ]);
+  const statsPayload = statsResult[0].status === 'fulfilled' ? statsResult[0].value : null;
+  const annotations = statsResult[1].status === 'fulfilled' ? statsResult[1].value : null;
+  const content = $('modal-content');
+  content.replaceChildren();
+
+  if (!statsPayload && !annotations) {
+    const error = document.createElement('p');
+    error.className = 'insight-empty';
+    error.textContent = statsResult[0].reason?.message || '阅读数据暂时不可用';
+    content.appendChild(error);
+  } else {
+    const stats = statsPayload?.stats || {};
+    const notes = statsPayload?.notes || {};
+    const grid = document.createElement('div');
+    grid.className = 'insight-grid';
+    grid.append(
+      insightCard('阅读时长', formatReadingTime(stats.readingTime || stats.totalReadingTime), '本月同步数据'),
+      insightCard('阅读天数', `${Number(stats.readingDays || stats.days || 0)} 天`, '本月活跃'),
+      insightCard('我的笔记', String(notes.totalNoteCount ?? notes.noteCount ?? 0), `${Number(notes.totalBookCount || 0)} 本书`),
+      insightCard('会员权益', membershipLabel(), membershipDetail()),
+    );
+    content.appendChild(grid);
+
+    if (state.currentBook) {
+      const bookSection = document.createElement('section');
+      bookSection.className = 'insight-section';
+      const heading = document.createElement('h3');
+      heading.textContent = state.currentBook.title;
+      bookSection.appendChild(heading);
+      const detail = document.createElement('p');
+      detail.className = 'insight-empty';
+      const entitlement = state.entitlement || {};
+      const entitlementText = Object.prototype.hasOwnProperty.call(entitlement, 'has_paid_content')
+        ? (entitlement.has_paid_content ? `目录含 ${entitlement.paid_chapters || 0} 个受限章节` : '当前目录未标记付费章节')
+        : '公众号文章或尚未加载目录';
+      detail.textContent = `当前进度 ${Math.round(Number(state.bookProgress || state.currentBook.progress || 0))}% · ${membershipLabel()} · ${entitlementText}`;
+      bookSection.appendChild(detail);
+      content.appendChild(bookSection);
+    }
+
+    if (annotations) {
+      content.appendChild(insightSection('本章摘录', annotations.underlines || [], '当前章节还没有摘录。'));
+      content.appendChild(insightSection('书友想法', annotations.reviews || [], '当前章节还没有书友想法。'));
+      content.appendChild(insightSection('我的想法', annotations.my_reviews || [], '当前章节还没有我的想法。'));
+    } else {
+      content.appendChild(insightSection('本章摘录与想法', [], '打开普通书籍的一章后，这里会显示摘录、书友想法和我的想法。'));
+    }
+  }
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const shelf = document.createElement('button');
+  shelf.className = 'button ghost';
+  shelf.textContent = '打开书架';
+  shelf.addEventListener('click', async () => {
+    closeModal();
+    await openShelf();
+  });
+  actions.appendChild(shelf);
+  const refresh = document.createElement('button');
+  refresh.className = 'button primary';
+  refresh.textContent = '刷新数据';
+  refresh.addEventListener('click', showInsights);
+  actions.appendChild(refresh);
+  content.appendChild(actions);
+}
+
+function goPrevious() {
+  if (state.pageIndex > 0) {
+    showPage(state.pageIndex - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+  } else {
+    goPreviousChapter();
+  }
+}
+
+function goNext() {
+  if (state.pageIndex < state.pages.length - 1) {
+    showPage(state.pageIndex + 1);
+  } else {
+    goNextChapter();
+  }
+}
+
+function goPreviousChapter() {
+  if (state.chapterIndex > 0) loadChapter(state.chapterIndex - 1);
+}
+
+function goNextChapter() {
+  if (state.chapterIndex >= 0 && state.chapterIndex < state.chapters.length - 1) loadChapter(state.chapterIndex + 1);
+}
+
+async function jumpToProgress(value) {
+  if (!state.chapters.length) return;
+  await waitForReportIdle(900);
+  await reportReading(true);
+  const fraction = Math.max(0, Math.min(1, Number(value || 0) / 100));
+  const target = Math.min(state.chapters.length - 1, Math.floor(fraction * state.chapters.length));
+  await loadChapter(target);
+  const local = fraction * state.chapters.length - target;
+  showPage(Math.floor(Math.max(0, Math.min(0.999, local)) * state.pages.length));
+  // A position jump is meaningful even when no additional reading seconds
+  // have accumulated; force the new chapter/page offset to the cloud.
+  await reportReading(true);
+}
+
+function loadPendingReports() {
+  try {
+    const value = JSON.parse(localStorage.getItem('wefish.pendingReports') || '[]');
+    state.pendingReports = Array.isArray(value) ? value.slice(-12) : [];
+  } catch (_) {
+    state.pendingReports = [];
+  }
+}
+
+function savePendingReports() {
+  try { localStorage.setItem('wefish.pendingReports', JSON.stringify(state.pendingReports.slice(-12))); } catch (_) { /* private mode */ }
+}
+
+async function flushPendingReports(timeoutMs = 0) {
+  if (state.reportInFlight || !state.pendingReports.length) return;
+  state.reportInFlight = true;
+  try {
+    while (state.pendingReports.length) {
+      const options = jsonBody(state.pendingReports[0]);
+      if (timeoutMs > 0) options.timeoutMs = timeoutMs;
+      await api('/api/reader/report', options);
+      state.pendingReports.shift();
+      savePendingReports();
+    }
+    state.syncStatus = 'synced';
+  } catch (_) {
+    state.syncStatus = 'pending';
+  } finally {
+    state.reportInFlight = false;
+  }
+}
+
+function waitForReportIdle(timeoutMs = 900) {
+  if (!state.reportInFlight) return Promise.resolve();
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const check = () => {
+      if (!state.reportInFlight || Date.now() - started >= timeoutMs) {
+        resolve();
+        return;
+      }
+      setTimeout(check, 25);
+    };
+    check();
+  });
+}
+
+async function reportReading(force = false, deadlineMs = 0) {
+  if (!state.currentBook || !state.reading || state.chapterIndex < 0 || state.currentBook.isMp) return;
+  if (state.reportInFlight) {
+    const waitMs = deadlineMs ? Math.max(0, Math.min(900, deadlineMs - Date.now())) : 900;
+    await waitForReportIdle(waitMs);
+    if (state.reportInFlight) return;
+  }
+  if (state.pendingReports.length) {
+    const timeoutMs = deadlineMs ? Math.max(0, deadlineMs - Date.now()) : 0;
+    await flushPendingReports(timeoutMs);
+  }
+  const delta = Math.floor(state.elapsed - state.reportedElapsed);
+  if (!force && delta < 30) return;
+  if (delta <= 0 && !force) return;
+  const chapter = state.chapters[state.chapterIndex];
+  const position = readerPosition();
+  state.chapterOffset = position.offset;
+  state.chapterSummary = position.summary;
+  state.bookProgress = position.progress;
+  const payload = {
+      bookId: state.currentBook.bookId,
+      chapterUid: chapter.chapterUid,
+      chapterIdx: chapter.chapterIdx || state.chapterIndex + 1,
+      chapterOffset: position.offset,
+      progress: position.progress || state.currentBook.progress || 0,
+      summary: position.summary,
+      elapsed: delta,
+    };
+  state.reportInFlight = true;
+  try {
+    const options = jsonBody(payload);
+    const timeoutMs = deadlineMs ? Math.max(0, deadlineMs - Date.now()) : 0;
+    if (timeoutMs > 0) options.timeoutMs = timeoutMs;
+    await api('/api/reader/report', options);
+    state.reportedElapsed = state.elapsed;
+    state.syncStatus = 'synced';
+    updateReaderHeader(chapter);
+  } catch (error) {
+    state.pendingReports.push(payload);
+    savePendingReports();
+    state.reportedElapsed = state.elapsed;
+    state.syncStatus = 'pending';
+    updateReaderHeader(chapter);
+    if (force) toast(`阅读时长暂未上报：${error.message}`, true);
+  } finally {
+    state.reportInFlight = false;
+  }
+}
+
+function tick() {
+  // The menu-bar line is still an active reading surface while the capsule
+  // is hidden, so its elapsed time must not depend on BrowserWindow visibility.
+  if (state.reading && state.currentBook) {
+    state.elapsed += 1;
+    $('duration').textContent = formatDuration(state.elapsed);
+    reportReading(false);
+  } else if (state.pendingReports.length) {
+    flushPendingReports();
+  }
+}
+
+function openModal(content, title = '扫码进入') {
+  $('modal-title').textContent = title;
+  $('modal-content').replaceChildren();
+  $('modal-content').insertAdjacentHTML('beforeend', content);
+  $('modal-backdrop').classList.remove('hidden');
+}
+
+function closeModal() {
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
+  $('modal-backdrop').classList.add('hidden');
+}
+
+function showManualAuth() {
+  openModal(`
+    <p class="modal-note">正文阅读需要 Web Reader Cookie；书架同步还需要可选的 Skill API Key。两者可以分别填写，凭据会保存在系统钥匙串中。</p>
+    <input class="modal-input" id="api-key-input" autocomplete="off" placeholder="Skill API Key（可选）" />
+    <input class="modal-input" id="cookie-input" autocomplete="off" placeholder="Web Reader Cookie，例如 wr_vid=…; wr_skey=…" />
+    <div class="modal-actions"><button class="button ghost" id="manual-cancel">取消</button><button class="button primary" id="manual-save">保存并验证</button></div>
+  `, '手动授权');
+  $('manual-cancel').addEventListener('click', closeModal);
+  $('manual-save').addEventListener('click', async () => {
+    const apiKey = $('api-key-input').value.trim();
+    const cookie = $('cookie-input').value.trim();
+    try {
+      await api('/api/auth/manual', jsonBody({ apiKey, cookie }));
+      closeModal();
+      toast('授权已保存');
+      await loadState({ openShelfOnSuccess: true });
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+}
+
+function showReaderLink() {
+  openModal(`
+    <p class="modal-note">粘贴微信读书网页版的阅读地址。这个入口只依赖 Web Reader Cookie，不要求先拿到 Skill API Key。</p>
+    <input class="modal-input" id="reader-link-input" autocomplete="off" placeholder="https://weread.qq.com/web/reader/…" />
+    <div class="modal-actions"><button class="button ghost" id="link-cancel">取消</button><button class="button primary" id="link-open">打开正文</button></div>
+  `, '打开阅读链接');
+  $('link-cancel').addEventListener('click', closeModal);
+  $('link-open').addEventListener('click', async () => {
+    try {
+      const book = await api('/api/reader/import', jsonBody({ url: $('reader-link-input').value.trim() }));
+      closeModal();
+      await loadBook(book);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+  $('reader-link-input').focus();
+}
+
+async function showQR() {
+  clearInterval(state.pollTimer);
+  openModal(`
+    <img class="qr-image" id="qr-image" alt="微信读书登录二维码" />
+    <p class="modal-status" id="qr-status">正在生成二维码…</p>
+    <input class="modal-input" id="otp-input" inputmode="numeric" maxlength="8" placeholder="若手机显示验证码，在这里输入（可选）" />
+    <div class="modal-actions"><button class="button ghost" id="qr-retry">刷新二维码</button><button class="button primary" id="qr-manual">手动授权</button></div>
+    <p class="modal-note">请用微信读书 App 扫描。扫码成功后会先保存 Web Reader Cookie；Skill/API Key 失败不会影响正文阅读。</p>
+  `, '微信扫码登录');
+  $('qr-retry').addEventListener('click', showQR);
+  $('qr-manual').addEventListener('click', showManualAuth);
+  try {
+    const started = await api('/api/qr/begin', jsonBody());
+    state.qrUid = started.uid;
+    $('qr-image').src = started.qrDataUrl;
+    $('qr-status').textContent = '等待手机确认…';
+    state.pollTimer = setInterval(pollQR, 2000);
+    await pollQR();
+  } catch (error) {
+    $('qr-status').textContent = error.message;
+    $('qr-status').style.color = 'var(--coral)';
+  }
+}
+
+async function pollQR() {
+  if (!state.qrUid || $('modal-backdrop').classList.contains('hidden')) return;
+  try {
+    const response = await api('/api/qr/poll', jsonBody({ uid: state.qrUid, otp: $('otp-input')?.value.trim() || '' }));
+    const login = response.login || {};
+    if (login.succeed) {
+      clearInterval(state.pollTimer);
+      const needsSkill = Boolean(response.account?.needs_skill);
+      closeModal();
+      await loadState({ openShelfOnSuccess: true });
+      toast(needsSkill ? '扫码成功；正文可读，书架同步请启用 Skill' : '扫码成功，已登录');
+      return;
+    }
+    if (login.transport_pending || login.poll_auth_pending) {
+      $('qr-status').textContent = '等待手机确认…';
+    } else if (login.need_otp || login.code === 'NEED_OTP') {
+      $('qr-status').textContent = '请输入手机上显示的验证码';
+    } else if (login.code === 'OTP_NOT_MATCH') {
+      $('qr-status').textContent = '验证码不匹配，请重新输入';
+    } else if (login.expired || login.code === 'EXPIRED') {
+      $('qr-status').textContent = '二维码已过期，请刷新';
+      clearInterval(state.pollTimer);
+    } else if (login.message || login.errmsg) {
+      $('qr-status').textContent = String(login.message || login.errmsg);
+    }
+  } catch (error) {
+    $('qr-status').textContent = error.message;
+  }
+}
+
+async function loadState({ openShelfOnSuccess = false } = {}) {
+  clearTimeout(state.restoreTimer);
+  state.restoreTimer = null;
+  try {
+    const value = await api('/api/state');
+    if (value.credentialsLoading) {
+      setStatus('正在恢复登录…');
+      clearTimeout(state.restoreTimer);
+      state.restoreTimer = setTimeout(loadState, 700);
+      return;
+    }
+    if (value.credentialsError) {
+      setStatus('登录恢复超时，请点击同步书架重试', 'warn');
+      return;
+    }
+    if (value.hasWebCookie) {
+      setStatus(value.accountName ? `${value.accountName} · Web Reader 已连接` : 'Web Reader 已连接', 'active');
+    } else if (value.hasGatewayKey) {
+      setStatus('Skill 已连接；正文还需要 Cookie', 'warn');
+    } else {
+      setStatus('准备就绪');
+    }
+    const signedIn = Boolean(value.hasWebCookie || value.hasGatewayKey);
+    const qrButton = $('qr-button');
+    if (qrButton) qrButton.classList.toggle('hidden', signedIn);
+    if (openShelfOnSuccess && signedIn) await openShelf();
+  } catch (error) {
+    setStatus('连接本地服务失败', 'warn');
+    toast(error.message, true);
+  }
+}
+
+function bindEvents() {
+  $('open-shelf').addEventListener('click', openShelf);
+  $('open-insights').addEventListener('click', showInsights);
+  $('close-shelf').addEventListener('click', closeShelf);
+  $('hide-panel').addEventListener('click', () => window.wefish.hide());
+  $('sync-button').addEventListener('click', loadShelf);
+  $('insights-button').addEventListener('click', showInsights);
+  $('manual-button').addEventListener('click', showManualAuth);
+  $('qr-button').addEventListener('click', showQR);
+  $('shelf-button').addEventListener('click', openShelf);
+  $('link-button').addEventListener('click', showReaderLink);
+  $('close-modal').addEventListener('click', closeModal);
+  $('previous-button').addEventListener('click', goPrevious);
+  $('next-button').addEventListener('click', goNext);
+  $('chapter-jump').addEventListener('change', (event) => {
+    if (event.target.value !== '') loadChapter(Number(event.target.value));
+  });
+  $('position-slider').addEventListener('change', (event) => jumpToProgress(event.target.value));
+  $('line-toggle').addEventListener('click', () => setLineAuto(!state.lineAuto));
+  $('line-interval').addEventListener('change', (event) => {
+    const seconds = Math.max(0.5, Math.min(10, Number(event.target.value) || 1));
+    event.target.value = String(seconds);
+    state.lineIntervalMs = seconds * 1000;
+    try { localStorage.setItem('wefish.lineInterval', String(seconds)); } catch (_) { /* private mode */ }
+    resetLineTimer();
+  });
+  $('toggle-reading').addEventListener('click', () => {
+    state.reading = !state.reading;
+    setLineAuto(state.reading);
+    $('toggle-reading em').textContent = state.reading ? '阅读中' : '已暂停';
+    setStatus(state.reading ? '正在阅读' : '阅读已暂停', state.reading ? 'active' : '');
+  });
+  window.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey) || !event.altKey) return;
+    const key = event.key;
+    if (key === 'ArrowLeft') { event.preventDefault(); goPrevious(); }
+    if (key === 'ArrowRight') { event.preventDefault(); goNext(); }
+    if (key === 'ArrowUp') { event.preventDefault(); nextLine(-1); }
+    if (key === 'ArrowDown') { event.preventDefault(); nextLine(1); }
+    if (key === ' ') { event.preventDefault(); setLineAuto(!state.lineAuto); }
+  });
+  $('modal-backdrop').addEventListener('click', (event) => {
+    if (event.target === $('modal-backdrop')) closeModal();
+  });
+  window.wefish.onCommand((command) => {
+    if (command === 'sync') loadShelf();
+    if (command === 'page-previous') goPrevious();
+    if (command === 'page-next') goNext();
+    if (command === 'chapter-previous') goPreviousChapter();
+    if (command === 'chapter-next') goNextChapter();
+    if (command === 'line-previous') nextLine(-1);
+    if (command === 'line-next') nextLine(1);
+    if (command === 'line-toggle') setLineAuto(!state.lineAuto);
+    if (command === 'qr') showQR();
+  });
+  window.wefish.onVisibility((visible) => {
+    state.visible = visible;
+    if (!visible) reportReading(true);
+  });
+  window.wefish.onFlushReading(() => {
+    if (state.flushStarted) return;
+    state.flushStarted = true;
+    (async () => {
+      const deadlineMs = Date.now() + 1700;
+      await waitForReportIdle(Math.min(900, Math.max(0, deadlineMs - Date.now())));
+      await reportReading(true, deadlineMs);
+      await flushPendingReports(Math.max(0, deadlineMs - Date.now()));
+    })().finally(() => window.wefish.readingFlushed());
+  });
+  window.wefish.onBridgeError((message) => {
+    setStatus('阅读服务启动失败', 'warn');
+    toast(message, true);
+  });
+}
+
+async function boot() {
+  bindEvents();
+  loadPendingReports();
+  try {
+    const stored = Number(localStorage.getItem('wefish.lineInterval') || 1);
+    if (stored >= 0.5 && stored <= 10) {
+      state.lineIntervalMs = stored * 1000;
+      $('line-interval').value = String(stored);
+    }
+  } catch (_) { /* private mode */ }
+  state.timer = setInterval(tick, 1000);
+  $('duration').textContent = formatDuration(state.elapsed);
+  try {
+    state.baseUrl = await waitForBridge();
+    await loadState({ openShelfOnSuccess: true });
+  } catch (error) {
+    setStatus('本地服务未启动', 'warn');
+    toast(error.message, true);
+  }
+}
+
+if (window.location.hash === '#self-test') {
+  window.__wefishTest = {
+    async openMock() {
+      await loadBook({ bookId: 'wf-001', title: '山谷来信', author: '合成作者', progress: 12 });
+      return {
+        pageCount: state.pages.length,
+        pageIndex: state.pageIndex,
+        lineIndex: state.lineIndex,
+        resumeOffset: state.chapterOffset,
+        preloadedPages: state.preloadedPages.slice(),
+        overflow: getComputedStyle($('reader-body')).overflow,
+        bodyHeight: $('reader-body').clientHeight,
+        bodyWidth: $('reader-body').clientWidth,
+        textLength: state.chapterTextLength,
+        chapterCount: state.chapters.length,
+        reading: state.reading,
+        status: $('status-text').textContent,
+        line: state.lines[state.lineIndex] || '',
+        membership: state.membership,
+      };
+    },
+    nextPage() {
+      goNext();
+      return { pageIndex: state.pageIndex, pageCount: state.pages.length };
+    },
+    nextLine() {
+      nextLine(1);
+      return { lineIndex: state.lineIndex, line: state.lines[state.lineIndex] || '' };
+    },
+    async jumpToProgress(value) {
+      await jumpToProgress(value);
+      return { chapterIndex: state.chapterIndex, pageIndex: state.pageIndex, pageCount: state.pages.length };
+    },
+    async openInsights() {
+      await showInsights();
+      return $('modal-content').textContent || '';
+    },
+  };
+}
+
+boot();

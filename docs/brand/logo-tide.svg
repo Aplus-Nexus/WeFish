@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title>WeFish Tide mark</title>
+  <desc>A quiet lime tide mark with a coral reading signal.</desc>
+  <rect width="512" height="512" rx="116" fill="#101413"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#B8F27C" stroke-width="26"/>
+  <path d="M129 286c45-42 93-62 143-60 46 2 83 18 111 48-31 39-75 61-130 65-51 4-93-13-124-53Z" fill="#B8F27C"/>
+  <path d="M285 226c28-37 62-55 102-54-10 28-27 50-52 67l-50-13Z" fill="#F27C5C"/>
+  <circle cx="216" cy="270" r="13" fill="#101413"/>
+  <path d="M167 337c42 25 91 31 147 18" fill="none" stroke="#F5EFDF" stroke-linecap="round" stroke-width="13" opacity=".82"/>
+</svg>

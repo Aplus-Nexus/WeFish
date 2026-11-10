@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>阅读器</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-label="阅读器"><i></i></span>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button quiet top-action-button" id="open-shelf" title="打开书架" aria-label="打开书架">书架</button>
+        <button class="icon-button quiet top-action-button" id="open-insights" title="阅读数据" aria-label="阅读数据">数据</button>
+        <button class="icon-button quiet" id="hide-panel" title="隐藏阅读舱" aria-label="隐藏阅读舱">×</button>
+      </div>
+    </header>
+
+    <div class="status-row">
+      <div class="status-copy"><span class="status-dot" id="status-dot"></span><span id="status-text">准备就绪</span></div>
+      <div class="session-time"><span>本次</span><strong id="duration">00:00</strong></div>
+    </div>
+
+    <main class="reader-stage">
+      <div class="book-kicker" id="book-kicker">菜单栏阅读舱</div>
+      <h1 class="book-title" id="book-title">把阅读藏在角落里</h1>
+      <div class="book-meta" id="book-meta">登录后，从书架或阅读链接开始</div>
+      <div class="progress-track"><span id="progress-bar"></span></div>
+      <div class="reader-tools" aria-label="阅读位置">
+        <select id="chapter-jump" title="跳转章节" aria-label="跳转章节"><option value="">章节</option></select>
+        <input id="position-slider" type="range" min="0" max="100" value="0" step="1" title="跳转阅读位置" aria-label="跳转阅读位置" />
+        <span id="page-label">0 / 0</span>
+        <button class="tool-button" id="line-toggle" title="切换逐行显示">行</button>
+        <label class="line-settings" title="自动换行间隔"><input id="line-interval" type="number" min="0.5" max="10" step="0.5" value="1" aria-label="自动换行间隔" /><span>s</span></label>
+      </div>
+      <article class="reader-body" id="reader-body">
+        <div class="empty-state">
+          <div class="empty-glyph">◒</div>
+          <h2>今天读一点</h2>
+          <p>点击书架选择一本书，或粘贴微信读书阅读链接。</p>
+          <div class="empty-actions">
+            <button class="button primary" id="shelf-button">打开书架</button>
+            <button class="button ghost" id="qr-button">微信扫码</button>
+            <button class="button ghost" id="link-button">打开链接</button>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <footer class="control-bar">
+      <button class="control-button" id="previous-button"><span>←</span><em>上一页</em></button>
+      <button class="control-button center-action" id="toggle-reading"><span class="pause-icon">Ⅱ</span><em>阅读中</em></button>
+      <button class="control-button" id="next-button"><em>下一页</em><span>→</span></button>
+    </footer>
+
+    <div class="shortcut-hint" aria-label="快捷键说明">
+      <div class="shortcut-item"><span class="shortcut-label">上一页 / 下一页</span><kbd>⌘/Ctrl</kbd><kbd>⌥/Alt</kbd><kbd>←/→</kbd></div>
+      <div class="shortcut-item"><span class="shortcut-label">上一行 / 下一行</span><kbd>⌘/Ctrl</kbd><kbd>⌥/Alt</kbd><kbd>↑/↓</kbd></div>
+      <div class="shortcut-item"><span class="shortcut-label">自动逐行</span><kbd>⌘/Ctrl</kbd><kbd>⌥/Alt</kbd><kbd>Space</kbd></div>
+      <div class="shortcut-item"><span class="shortcut-label">隐藏 / 唤起</span><kbd>⌘/Ctrl</kbd><kbd>⌥/Alt</kbd><kbd>M</kbd></div>
+    </div>
+  </div>
+
+  <div class="drawer" id="shelf-drawer" aria-hidden="true">
+    <div class="drawer-head"><div><span class="drawer-eyebrow">LIBRARY</span><h2>我的书架</h2></div><button class="icon-button" id="close-shelf">×</button></div>
+    <div class="drawer-actions"><button class="button tiny primary" id="sync-button">同步书架</button><button class="button tiny ghost" id="insights-button">阅读数据</button><button class="button tiny ghost" id="manual-button">手动授权</button></div>
+    <div class="shelf-list" id="shelf-list"><div class="list-empty">还没有书架内容</div></div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modal-backdrop">
+    <section class="modal-card" id="qr-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head"><div><span class="drawer-eyebrow">WECHAT READER</span><h2 id="modal-title">扫码进入</h2></div><button class="icon-button" id="close-modal">×</button></div>
+      <div class="modal-content" id="modal-content"></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="./pagination.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
