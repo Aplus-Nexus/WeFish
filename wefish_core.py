@@ -1253,7 +1253,6 @@ def content_params(book_id: str, chapter_uid: int, psvts: str, style: bool = Fal
     return params
 
 
-
 def read_report_params(*, book_id: str, chapter_uid: int, chapter_idx: int = 0,
                        chapter_offset: int = 0, progress: Any = 0, summary: str = "",
                        psvts: str, pclts: str = "", token: str = "",
@@ -1282,11 +1281,12 @@ def read_report_params(*, book_id: str, chapter_uid: int, chapter_idx: int = 0,
         "rt": elapsed_value,
         "ts": ts,
         "rn": rn,
-        "sg": hashlib.sha256(f"{ts}{rn}{token}".encode()).hexdigest(),
         "ct": now,
         "ps": str(psvts or ""),
         "pc": pc,
     }
+    if token:
+        params["sg"] = hashlib.sha256(f"{ts}{rn}{token}".encode()).hexdigest()
     params["s"] = weread_sign(params)
     return params
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.request import Request, build_opener
 
-from wefish_core import AuthError, CredentialVault, LocalCache, WeReadClient, WeFishError, apply_environment_credentials, content_params, decode_content_shards, extract_mp_body, extract_reader_state
+from wefish_core import AuthError, CredentialVault, LocalCache, WeReadClient, WeFishError, apply_environment_credentials, content_params, decode_content_shards, extract_mp_body, extract_reader_state, read_report_params
 from mock_service import _encoded_shards, serve
 
 
@@ -280,12 +280,21 @@ class CoreTests(unittest.TestCase):
 
         c.report_read({"bookId": "wf-001", "chapterUid": 1, "chapterIdx": 1, "chapterOffset": 42, "summary": "章节摘要", "progress": 12, "elapsed": 30})
         report = self.server.read_requests[-1]
-        for field in ("appId", "b", "c", "ci", "co", "pr", "rt", "ts", "rn", "sg", "ct", "ps", "pc", "s"):
+        for field in ("b", "c", "ci", "co", "pr", "rt", "ts", "rn", "sg", "ct", "ps", "pc", "s"):
             self.assertIn(field, report)
         self.assertEqual(report["ps"], "mock-psvts")
         self.assertEqual(report["rt"], 30)
         self.assertEqual(report["co"], 42)
         self.assertEqual(report["sm"], "章节摘要")
+
+    def test_reader_report_does_not_invent_a_token_when_reader_state_has_none(self):
+        params = read_report_params(
+            book_id="wf-001",
+            chapter_uid=1,
+            psvts="mock-psvts",
+            token="",
+        )
+        self.assertNotIn("sg", params)
 
     def test_reader_content_falls_back_to_txt_shards(self):
         c = self.client()
