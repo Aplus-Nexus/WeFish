@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const version = require('./package.json').version;
 const requestedTarget = process.argv.find((arg) => arg.startsWith('--target='))?.split('=', 2)[1] || '';
 
 if (requestedTarget && requestedTarget !== (process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : '')) {
@@ -58,7 +59,7 @@ if (target === 'mac') {
   execFileSync('ditto', [
     '-c', '-k', '--sequesterRsrc', '--keepParent',
     app,
-    'release/上班墨鱼-mac.zip',
+    `release/WeFish-${version}-mac.zip`,
   ], { stdio: 'inherit' });
 } else if (target === 'win') {
   validateBundledResources(target);

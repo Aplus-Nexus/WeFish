@@ -52,12 +52,14 @@
     ],
     "mac": {
       "category": "public.app-category.books",
+      "artifactName": "WeFish-${version}-mac.${ext}",
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "artifactName": "WeFish-${version}-win.${ext}",
       "target": [
         "nsis",
         "zip"
