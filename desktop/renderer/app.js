@@ -224,7 +224,15 @@ function updateReaderPosition() {
 }
 
 function setTrayLine(text) {
-  if (window.wefish && typeof window.wefish.setLine === 'function') window.wefish.setLine(formatTrayLine(text));
+  if (window.wefish && typeof window.wefish.setLine === 'function') {
+    const rawText = String(text || '阅读器').replace(/\s+/g, ' ').trim() || '阅读器';
+    window.wefish.setLine({
+      text: formatTrayLine(rawText),
+      rawText,
+      widthMode: state.trayWidthMode,
+      widthChars: state.trayWidthChars,
+    });
+  }
 }
 
 function currentPageText() {
@@ -1126,6 +1134,21 @@ if (window.location.hash === '#self-test') {
     async openInsights() {
       await showInsights();
       return $('modal-content').textContent || '';
+    },
+    async checkTrayWidths() {
+      const original = { mode: state.trayWidthMode, chars: state.trayWidthChars };
+      const snapshots = [];
+      for (const [mode, chars] of [['dynamic', 28], ['fixed', 24], ['fill', 64]]) {
+        setTrayWidth(mode, chars);
+        snapshots.push({
+          mode: state.trayWidthMode,
+          chars: state.trayWidthChars,
+          storedMode: localStorage.getItem('wefish.trayWidthMode'),
+          storedChars: localStorage.getItem('wefish.trayWidthChars'),
+        });
+      }
+      setTrayWidth(original.mode, original.chars);
+      return snapshots;
     },
   };
 }

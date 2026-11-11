@@ -1,0 +1,42 @@
+:root {
+  color-scheme: dark;
+  font-family: Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+  background: transparent;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+
+.mini-surface {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  border: 1px solid rgba(238, 231, 215, .17);
+  border-radius: 12px;
+  background: rgba(16, 20, 19, .94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .32);
+  color: #eee7d7;
+}
+
+.mini-mark {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: #b8f27c;
+  box-shadow: 0 0 0 4px rgba(184, 242, 124, .1);
+}
+
+.mini-line {
+  min-width: 0;
+  overflow: hidden;
+  color: #eee7d7;
+  font-size: 16px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: none;
+}
