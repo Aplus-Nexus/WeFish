@@ -131,16 +131,16 @@ function createTray() {
   tray.setToolTip('阅读器');
   tray.on('click', togglePanel);
   const menu = Menu.buildFromTemplate([
-    { label: '显示 / 隐藏阅读舱', click: togglePanel },
+    { label: '显示 / 隐藏阅读舱', accelerator: 'CommandOrControl+Alt+M', click: togglePanel },
     { type: 'separator' },
-    { label: '同步书架', click: () => panel?.webContents.send('command', 'sync') },
-    { label: '上一页', click: () => panel?.webContents.send('command', 'page-previous') },
-    { label: '下一页', click: () => panel?.webContents.send('command', 'page-next') },
-    { label: '上一章', click: () => panel?.webContents.send('command', 'chapter-previous') },
-    { label: '下一章', click: () => panel?.webContents.send('command', 'chapter-next') },
-    { label: '上一行', click: () => panel?.webContents.send('command', 'line-previous') },
-    { label: '下一行', click: () => panel?.webContents.send('command', 'line-next') },
-    { label: '自动逐行', click: () => panel?.webContents.send('command', 'line-toggle') },
+    { label: '同步书架', accelerator: 'CommandOrControl+Alt+R', click: () => panel?.webContents.send('command', 'sync') },
+    { label: '上一页', accelerator: 'CommandOrControl+Alt+Left', click: () => panel?.webContents.send('command', 'page-previous') },
+    { label: '下一页', accelerator: 'CommandOrControl+Alt+Right', click: () => panel?.webContents.send('command', 'page-next') },
+    { label: '上一章', accelerator: 'CommandOrControl+Alt+Shift+Left', click: () => panel?.webContents.send('command', 'chapter-previous') },
+    { label: '下一章', accelerator: 'CommandOrControl+Alt+Shift+Right', click: () => panel?.webContents.send('command', 'chapter-next') },
+    { label: '上一行', accelerator: 'CommandOrControl+Alt+Up', click: () => panel?.webContents.send('command', 'line-previous') },
+    { label: '下一行', accelerator: 'CommandOrControl+Alt+Down', click: () => panel?.webContents.send('command', 'line-next') },
+    { label: '自动逐行', accelerator: 'CommandOrControl+Alt+Space', click: () => panel?.webContents.send('command', 'line-toggle') },
     { label: '逐行速度', submenu: [
       { label: '0.5 秒（快）', click: () => panel?.webContents.send('command', 'line-interval:0.5') },
       { label: '1 秒（默认）', click: () => panel?.webContents.send('command', 'line-interval:1') },
@@ -157,10 +157,10 @@ function createTray() {
       { type: 'separator' },
       { label: '打开宽度设置', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'tray-width:settings'); } },
     ] },
-    { label: '快捷键与使用说明', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); } },
+    { label: '快捷键与使用说明', accelerator: 'CommandOrControl+Alt+H', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); } },
     { label: '微信扫码', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'qr'); } },
-    { id: 'compact-mode', label: '小窗模式', type: 'checkbox', click: (item) => setCompactMode(item.checked) },
-    { id: 'office-title-mode', label: '工作文档标题', type: 'checkbox', click: (item) => setOfficeTitleMode(item.checked) },
+    { id: 'compact-mode', label: '小窗模式', accelerator: 'CommandOrControl+Alt+P', type: 'checkbox', click: (item) => setCompactMode(item.checked) },
+    { id: 'office-title-mode', label: '工作文档标题', accelerator: 'CommandOrControl+Alt+T', type: 'checkbox', click: (item) => setOfficeTitleMode(item.checked) },
     { type: 'separator' },
     { label: '关于 / 许可证', click: () => dialog.showMessageBox(panel || undefined, {
       type: 'info',
@@ -262,6 +262,7 @@ function startBridge() {
 function registerShortcuts() {
   const modifier = 'CommandOrControl+Alt+';
   globalShortcut.register(`${modifier}M`, togglePanel);
+  globalShortcut.register(`${modifier}H`, () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); });
   globalShortcut.register(`${modifier}R`, () => panel?.webContents.send('command', 'sync'));
   globalShortcut.register(`${modifier}Left`, () => panel?.webContents.send('command', 'page-previous'));
   globalShortcut.register(`${modifier}Right`, () => panel?.webContents.send('command', 'page-next'));
