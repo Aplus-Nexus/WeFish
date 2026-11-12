@@ -55,6 +55,7 @@ const target = requestedTarget || (process.platform === 'darwin' ? 'mac' : proce
 if (target === 'mac') {
   validateBundledResources(target);
   run(['--mac', 'dir', '--publish', 'never']);
+  run(['--mac', 'dmg', '--publish', 'never']);
   const app = findMacApp();
   execFileSync('ditto', [
     '-c', '-k', '--sequesterRsrc', '--keepParent',
