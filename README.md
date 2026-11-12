@@ -57,7 +57,7 @@ npm run package:mac
 npm run smoke:package
 ```
 
-`smoke:mock` 和 `smoke:package` 只连接本地合成服务，不访问微信读书，也不需要账号。Windows 构建必须在 Windows runner 上执行；PyInstaller 不能把 macOS 侧车伪装成 Windows 可执行文件。推送 `v1.0.0` 标签后，GitHub Actions 会分别构建 macOS 和 Windows 压缩包并上传到 Release。
+`smoke:mock` 和 `smoke:package` 只连接本地合成服务，不访问微信读书，也不需要账号。Windows 构建必须在 Windows runner 上执行；PyInstaller 不能把 macOS 侧车伪装成 Windows 可执行文件。推送版本标签后，GitHub Actions 会分别构建 macOS DMG/ZIP 和 Windows ZIP，并上传到 Release。
 
 `app.py` 是保留的旧版 PySide6 回退界面；正式分发入口以 `desktop/` 下的 Electron 壳为准。浏览器页面不会接触 Cookie 或 API Key。
 

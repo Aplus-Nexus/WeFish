@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 · 2026-11-12
+
+- Windows 任务栏附近阅读小窗，支持逐行阅读、宽度模式和隐藏主窗口后继续显示
+- macOS 与 Windows 托盘菜单统一显示快捷键，补充快捷键说明入口
+- 阅读区域支持动态宽度、固定长度和尽量占满空余位置
+- macOS 生成 DMG/ZIP，Windows 由 Windows runner 生成 ZIP
+- 增加 Windows 阅读表面、托盘菜单快捷键和宽度设置的自测覆盖
+
 ## 1.0.0 · 2026-11-10
 
 - macOS 菜单栏与 Windows 托盘阅读舱
