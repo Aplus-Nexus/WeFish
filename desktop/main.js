@@ -558,16 +558,18 @@ async function assertMockRenderer() {
     hasAutoLineShortcut: document.body.textContent.includes('自动逐行'),
     hasHideShortcut: document.body.textContent.includes('隐藏 / 唤起'),
     hasShelfSearch: Boolean(document.querySelector('#shelf-search')),
+    hasRecentShelf: Boolean(document.querySelector('#recent-section'))
+      && Boolean(document.querySelector('#recent-list')),
     hasTrayWidthSettings: document.body.textContent.includes('顶部栏阅读区域')
       && Boolean(document.querySelector('#tray-width-mode'))
       && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasTrayWidthSettings) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
   }
   const shelfSearch = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfSearch()', true);
-  if (!shelfSearch || shelfSearch.matched !== 1 || shelfSearch.total !== 2) {
+  if (!shelfSearch || shelfSearch.matched !== 1 || shelfSearch.recentCount !== 1 || shelfSearch.total !== 2) {
     throw new Error(`shelf search did not filter locally: ${JSON.stringify(shelfSearch)}`);
   }
   if (panel.isVisible()) throw new Error('reader panel was shown by menu-bar reading actions');
