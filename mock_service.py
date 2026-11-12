@@ -127,8 +127,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"book": book})
             if api == "/book/info": return self._json(200, BOOK)
             if api == "/book/bookmarklist": return self._json(200, {"updated": [{"markText": "合成摘录", "chapterUid": 1, "range": "0-4"}]})
+            if api == "/book/addBookmark":
+                self.server.mock_bookmarks = getattr(self.server, "mock_bookmarks", []) + [dict(body)]
+                return self._json(200, {"succ": 1, "bookmarkId": "mock-bookmark-1"})
             if api == "/book/readreviews": return self._json(200, {"reviews": [{"range": "0-4", "pageReviews": [{"review": {"content": "合成书友想法", "chapterUid": 1, "range": "0-4"}}]}]})
             if api == "/review/list/mine": return self._json(200, {"reviews": [{"review": {"content": "合成我的想法", "chapterUid": 1, "reviewId": "mine-1"}}]})
+            if api == "/review/add":
+                self.server.mock_reviews = getattr(self.server, "mock_reviews", []) + [dict(body)]
+                return self._json(200, {"succ": 1, "reviewId": "mock-review-1"})
             if api == "/review/list": return self._json(200, {"reviews": [{"content": "合成书评"}]})
             if api == "/readdata/detail": return self._json(200, {"readingTime": 3600, "readingDays": 4, "mode": body.get("mode", "monthly")})
             if api == "/user/notebooks": return self._json(200, {"totalBookCount": 1, "totalNoteCount": 2, "books": [{"bookId": BOOK["bookId"], "noteCount": 2, "reviewCount": 1, "bookmarkCount": 1}]})

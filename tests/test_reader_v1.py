@@ -45,6 +45,24 @@ class ReaderV1ServiceTests(unittest.TestCase):
         self.assertEqual(payload["stats"]["readingTime"], 3600)
         self.assertEqual(payload["notes"]["totalNoteCount"], 2)
 
+    def test_weekly_reading_data_and_annotation_writes_use_cloud_contract(self):
+        status, weekly = self.request("GET", "/api/stats?mode=weekly")
+        self.assertEqual(status, 200)
+        self.assertEqual(weekly["mode"], "weekly")
+        self.assertEqual(weekly["stats"]["mode"], "weekly")
+
+        status, highlight = self.request("POST", "/api/reader/highlight", {
+            "bookId": "wf-001", "chapterUid": 1, "range": "4-10", "markText": "合成当前行",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(highlight["succ"], 1)
+
+        status, thought = self.request("POST", "/api/reader/thought", {
+            "bookId": "wf-001", "chapterUid": 1, "range": "4-10", "content": "合成想法",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(thought["succ"], 1)
+
     def test_progress_and_duration_round_trip_through_new_session_endpoint(self):
         self.request("POST", "/api/auth/manual", {"cookie": "wr_vid=mock-vid; wr_skey=mock-skey"})
         status, report = self.request("POST", "/api/reader/report", {

@@ -1030,6 +1030,43 @@ class WeReadClient:
     def notebooks(self, count=20):
         return self.gateway("/user/notebooks", count=int(count), lastSort=0)
 
+    def add_bookmark(self, payload: Dict[str, Any]):
+        """Create a cloud highlight through the official WeRead Gateway."""
+        value = dict(payload or {})
+        book_id = str(value.get("bookId") or "").strip()
+        mark_text = str(value.get("markText") or "").strip()
+        if not book_id or not mark_text:
+            raise WeFishError("划线需要书籍和正文")
+        chapter_uid = value.get("chapterUid")
+        if chapter_uid is None:
+            raise WeFishError("划线缺少章节位置")
+        params = {
+            "bookId": book_id,
+            "chapterUid": int(chapter_uid),
+            "range": str(value.get("range") or "0-0"),
+            "markText": mark_text,
+            "type": int(value.get("type", 1) or 1),
+            "style": int(value.get("style", 1) or 1),
+            "colorStyle": int(value.get("colorStyle", 0) or 0),
+        }
+        for key in ("bookVersion", "chapterName", "contextAbstract"):
+            if value.get(key) not in (None, ""):
+                params[key] = value[key]
+        return self.gateway("/book/addBookmark", **params)
+
+    def add_review(self, payload: Dict[str, Any]):
+        """Create a cloud reading thought through the official Gateway."""
+        value = dict(payload or {})
+        book_id = str(value.get("bookId") or "").strip()
+        content = str(value.get("content") or "").strip()
+        if not book_id or not content:
+            raise WeFishError("想法需要书籍和内容")
+        params = {"bookId": book_id, "content": content, "type": int(value.get("type", 1) or 1)}
+        for key in ("chapterUid", "range", "abstract", "star"):
+            if value.get(key) not in (None, ""):
+                params[key] = int(value[key]) if key in {"chapterUid", "star"} else value[key]
+        return self.gateway("/review/add", **params)
+
     def report_read(self, payload: Dict[str, Any]):
         """Report a signed Web Reader reading position/session."""
         self._ensure_web_session()

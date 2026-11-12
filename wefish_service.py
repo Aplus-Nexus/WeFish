@@ -151,11 +151,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/stats":
             try:
-                stats = self.bridge.client.read_stats("monthly")
+                requested = (parse_qs(parsed.query).get("mode") or ["monthly"])[0]
+                mode = requested if requested in {"weekly", "monthly", "annually", "overall"} else "monthly"
+                stats = self.bridge.client.read_stats(mode)
                 notes = self.bridge.client.notebooks()
                 return self._json(200, {
                     "stats": stats,
                     "notes": notes,
+                    "mode": mode,
                     "capability": "reading-data",
                     "source": "weread-gateway",
                 })
@@ -318,10 +321,19 @@ class Handler(BaseHTTPRequestHandler):
                 if route == "/api/reader/annotations":
                     return self._json(200, self.bridge.client.annotations(str(payload.get("bookId") or ""), int(payload.get("chapterUid"))))
 
+                if route == "/api/reader/highlight":
+                    return self._json(200, self.bridge.client.add_bookmark(payload))
+
+                if route == "/api/reader/thought":
+                    return self._json(200, self.bridge.client.add_review(payload))
+
                 if route == "/api/stats":
-                    stats = self.bridge.client.read_stats("monthly")
+                    mode = str(payload.get("mode") or "monthly")
+                    if mode not in {"weekly", "monthly", "annually", "overall"}:
+                        mode = "monthly"
+                    stats = self.bridge.client.read_stats(mode)
                     notes = self.bridge.client.notebooks()
-                    return self._json(200, {"stats": stats, "notes": notes})
+                    return self._json(200, {"stats": stats, "notes": notes, "mode": mode})
 
                 return self._json(404, {"error": "未知接口"})
         except (AuthError, WeFishError, ValueError) as exc:

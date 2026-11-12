@@ -1,0 +1,14 @@
+:root { color-scheme: dark; font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; background: #101413; color: #eee7d7; }
+body { padding: 16px; }
+.thought-card { min-height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.thought-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.eyebrow { color: #b8f27c; font-size: 9px; letter-spacing: 2px; font-weight: 700; }
+h1 { margin: 4px 0 0; font: 600 22px/1.1 Georgia, "Songti SC", serif; }
+#close { border: 0; background: transparent; color: #a8aea8; font-size: 24px; line-height: 1; cursor: pointer; }
+.thought-context { margin: 0; color: #9ba49d; font-size: 12px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+textarea { width: 100%; flex: 1; min-height: 100px; resize: vertical; border: 1px solid rgba(238, 231, 215, .2); border-radius: 10px; padding: 12px; color: #eee7d7; background: #18201d; outline: none; font: 14px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+textarea:focus { border-color: #b8f27c; box-shadow: 0 0 0 3px rgba(184, 242, 124, .1); }
+footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; color: #8f9891; font-size: 10px; }
+#send { border: 0; border-radius: 8px; padding: 9px 12px; color: #132014; background: #b8f27c; font-weight: 700; cursor: pointer; white-space: nowrap; }

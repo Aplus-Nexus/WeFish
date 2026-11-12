@@ -40,6 +40,10 @@ const state = {
   remoteProgress: null,
   pendingReports: [],
   reportInFlight: false,
+  positionSyncTimer: null,
+  positionSyncQueued: false,
+  showLineProgress: true,
+  showPercent: true,
   flushStarted: false,
   restoreTimer: null,
 };
@@ -327,7 +331,7 @@ function readerPosition() {
 }
 
 function updateReaderPosition() {
-  if (state.chapterIndex < 0 || !state.currentBook || state.currentBook.isMp) return;
+  if (state.chapterIndex < 0 || !state.currentBook) return;
   const position = readerPosition();
   state.chapterOffset = position.offset;
   state.chapterSummary = position.summary;
@@ -336,16 +340,123 @@ function updateReaderPosition() {
   $('position-slider').value = String(Math.round(position.progress));
   $('page-label').textContent = `${state.pageIndex + 1} / ${state.pages.length}`;
   updateReaderHeader(state.chapters[state.chapterIndex]);
+  updateProgressDisplay(position.progress);
+}
+
+function lineStartOffset() {
+  const page = state.pages[state.pageIndex] || { startOffset: 0, text: '' };
+  const pageText = currentPageText();
+  const line = String(state.lines[state.lineIndex] || pageText || '');
+  let cursor = 0;
+  for (let index = 0; index < state.lineIndex; index += 1) {
+    const previous = String(state.lines[index] || '');
+    const found = pageText.indexOf(previous, cursor);
+    cursor = found >= 0 ? found + previous.length : cursor + previous.length;
+  }
+  const found = pageText.indexOf(line, cursor);
+  return Math.max(0, Number(page.startOffset || 0) + (found >= 0 ? found : cursor));
+}
+
+function currentParagraphInfo() {
+  const page = state.pages[state.pageIndex] || { startOffset: 0, text: '' };
+  const pageText = currentPageText();
+  const root = $('reader-body').querySelector('.reader-page');
+  const blocks = root
+    ? [...root.querySelectorAll('h1,h2,h3,h4,p,blockquote,li')]
+      .map((node) => String(node.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+    : [];
+  const lineRelative = Math.max(0, lineStartOffset() - Number(page.startOffset || 0));
+  let cursor = 0;
+  for (const text of blocks) {
+    const found = pageText.indexOf(text, cursor);
+    const start = found >= 0 ? found : cursor;
+    const end = start + text.length;
+    if (lineRelative >= start && lineRelative <= end) {
+      return {
+        text,
+        range: `${Number(page.startOffset || 0) + start}-${Number(page.startOffset || 0) + end}`,
+      };
+    }
+    cursor = Math.max(cursor, end);
+  }
+  return { text: pageText, range: `${Number(page.startOffset || 0)}-${Number(page.startOffset || 0) + pageText.length}` };
+}
+
+function currentAnnotationContext(kind = 'line') {
+  const line = String(state.lines[state.lineIndex] || currentPageText() || '').trim();
+  const lineStart = lineStartOffset();
+  const lineRange = `${lineStart}-${lineStart + line.length}`;
+  const paragraph = currentParagraphInfo();
+  return {
+    text: kind === 'paragraph' ? paragraph.text : line,
+    line,
+    range: kind === 'paragraph' ? paragraph.range : lineRange,
+    paragraph: paragraph.text,
+    paragraphRange: paragraph.range,
+  };
+}
+
+function updateProgressDisplay(progress = state.bookProgress) {
+  const lineCount = $('progress-line-count');
+  const percent = $('progress-percent');
+  const ring = $('progress-ring-value');
+  const lineTotal = Math.max(1, state.lines.length);
+  const lineCurrent = Math.min(lineTotal, Math.max(1, state.lineIndex + 1));
+  if (lineCount) {
+    lineCount.textContent = `${lineCurrent} / ${lineTotal} 行`;
+    lineCount.hidden = !state.showLineProgress;
+  }
+  if (percent) {
+    percent.textContent = `${Math.round(Number(progress) || 0)}%`;
+    percent.hidden = !state.showPercent;
+  }
+  if (ring) {
+    const circumference = 2 * Math.PI * 22;
+    const ratio = Math.max(0, Math.min(100, Number(progress) || 0)) / 100;
+    ring.style.strokeDasharray = String(circumference);
+    ring.style.strokeDashoffset = String(circumference * (1 - ratio));
+    ring.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+    ring.closest('.progress-ring-wrap')?.toggleAttribute('hidden', !state.showPercent);
+  }
+  const lineToggle = $('show-line-progress');
+  const percentToggle = $('show-percent-progress');
+  if (lineToggle) lineToggle.checked = state.showLineProgress;
+  if (percentToggle) percentToggle.checked = state.showPercent;
+}
+
+function setProgressDisplay(kind, enabled, notify = false) {
+  if (kind === 'lines') state.showLineProgress = Boolean(enabled);
+  if (kind === 'percent') state.showPercent = Boolean(enabled);
+  try {
+    localStorage.setItem(`wefish.progress.${kind}`, String(Boolean(enabled)));
+  } catch (_) { /* private mode */ }
+  updateProgressDisplay(state.bookProgress);
+  if (state.pages.length) setTrayLine(state.lines[state.lineIndex] || currentPageText());
+  if (notify) toast(`${kind === 'lines' ? '行数' : '百分比'}${enabled ? '已显示' : '已隐藏'}`);
 }
 
 function setTrayLine(text) {
   if (window.wefish && typeof window.wefish.setLine === 'function') {
     const rawText = String(text || '阅读器').replace(/\s+/g, ' ').trim() || '阅读器';
+    const annotation = currentAnnotationContext();
+    const position = readerPosition();
     window.wefish.setLine({
       text: formatTrayLine(rawText),
       rawText,
+      paragraph: annotation.paragraph,
       widthMode: state.trayWidthMode,
       widthChars: state.trayWidthChars,
+      bookId: state.currentBook?.bookId || '',
+      bookTitle: state.currentBook?.title || '',
+      chapterUid: state.chapters[state.chapterIndex]?.chapterUid || '',
+      chapterName: state.chapters[state.chapterIndex]?.title || '',
+      range: annotation.range,
+      paragraphRange: annotation.paragraphRange,
+      lineProgress: `${Math.min(state.lines.length, state.lineIndex + 1)} / ${Math.max(1, state.lines.length)} 行`,
+      percent: position.progress,
+      showLineProgress: state.showLineProgress,
+      showPercent: state.showPercent,
     });
   }
 }
@@ -440,6 +551,7 @@ function updateLineDisplay() {
   button.classList.toggle('active', state.lineAuto);
   button.textContent = state.lineAuto ? '行▶' : '行Ⅱ';
   updateReaderPosition();
+  schedulePositionSync();
 }
 
 function resetLineTimer() {
@@ -560,12 +672,13 @@ async function loadChapter(index, resume = null) {
     let resumeLineIndex = 0;
     if (resume && state.pages[state.pageIndex]?.text) {
       const page = state.pages[state.pageIndex];
-      const lineWidth = window.innerHeight < 400 ? 18 : 28;
+      const lineWidth = trayLineWidth();
       const lines = WeFishPagination.splitLines(page.text, lineWidth);
       const fraction = Math.max(0, Math.min(1,
         (resumeOffset - page.startOffset) / Math.max(1, page.text.length),
       ));
       resumeLineIndex = Math.floor(fraction * Math.max(0, lines.length - 1));
+      if (resumeOffset > page.startOffset && lines.length > 1) resumeLineIndex = Math.max(1, resumeLineIndex);
     }
     showPage(state.pageIndex, { lineIndex: resumeLineIndex });
     updateReaderPosition();
@@ -678,6 +791,16 @@ function insightCard(label, value, detail = '') {
   return card;
 }
 
+function statsReadingSeconds(stats) {
+  const value = stats || {};
+  return Number(value.totalReadTime ?? value.readingTime ?? value.totalReadingTime ?? value.wrReadTime ?? 0) || 0;
+}
+
+function statsReadingDays(stats) {
+  const value = stats || {};
+  return Number(value.readDays ?? value.readingDays ?? value.days ?? 0) || 0;
+}
+
 function membershipLabel(snapshot = state.membership) {
   const status = snapshot?.status;
   if (status === 'active') return '会员有效';
@@ -731,7 +854,8 @@ function insightSection(title, rows, emptyText) {
 async function showInsights() {
   openModal('<p class="insights-loading">正在读取阅读数据…</p>', '阅读数据');
   const statsResult = await Promise.allSettled([
-    getApi('/api/stats'),
+    getApi('/api/stats?mode=weekly'),
+    getApi('/api/stats?mode=monthly'),
     state.currentBook && !state.currentBook.isMp && state.chapterIndex >= 0
       ? api('/api/reader/annotations', jsonBody({
         bookId: state.currentBook.bookId,
@@ -739,24 +863,29 @@ async function showInsights() {
       }))
       : Promise.resolve(null),
   ]);
-  const statsPayload = statsResult[0].status === 'fulfilled' ? statsResult[0].value : null;
-  const annotations = statsResult[1].status === 'fulfilled' ? statsResult[1].value : null;
+  const weeklyPayload = statsResult[0].status === 'fulfilled' ? statsResult[0].value : null;
+  const monthlyPayload = statsResult[1].status === 'fulfilled' ? statsResult[1].value : null;
+  const statsPayload = monthlyPayload || weeklyPayload;
+  const annotations = statsResult[2].status === 'fulfilled' ? statsResult[2].value : null;
   const content = $('modal-content');
   content.replaceChildren();
 
   if (!statsPayload && !annotations) {
     const error = document.createElement('p');
     error.className = 'insight-empty';
-    error.textContent = statsResult[0].reason?.message || '阅读数据暂时不可用';
+    error.textContent = statsResult[1].reason?.message || statsResult[0].reason?.message || '阅读数据暂时不可用';
     content.appendChild(error);
   } else {
     const stats = statsPayload?.stats || {};
     const notes = statsPayload?.notes || {};
     const grid = document.createElement('div');
     grid.className = 'insight-grid';
+    const weekly = weeklyPayload?.stats || {};
+    const monthly = monthlyPayload?.stats || {};
     grid.append(
-      insightCard('阅读时长', formatReadingTime(stats.readingTime || stats.totalReadingTime), '本月同步数据'),
-      insightCard('阅读天数', `${Number(stats.readingDays || stats.days || 0)} 天`, '本月活跃'),
+      insightCard('本周阅读时长', formatReadingTime(statsReadingSeconds(weekly)), '微信读书云端统计'),
+      insightCard('本月阅读时长', formatReadingTime(statsReadingSeconds(monthly)), '微信读书云端统计'),
+      insightCard('本月阅读天数', `${statsReadingDays(monthly)} 天`, '云端活跃天数'),
       insightCard('我的笔记', String(notes.totalNoteCount ?? notes.noteCount ?? 0), `${Number(notes.totalBookCount || 0)} 本书`),
       insightCard('会员权益', membershipLabel(), membershipDetail()),
     );
@@ -803,6 +932,56 @@ async function showInsights() {
   refresh.addEventListener('click', showInsights);
   actions.appendChild(refresh);
   content.appendChild(actions);
+}
+
+async function highlightCurrent(kind = 'line') {
+  if (!state.currentBook || state.currentBook.isMp || state.chapterIndex < 0) {
+    toast('公众号文章暂不支持云端划线', true);
+    return;
+  }
+  const annotation = currentAnnotationContext(kind === 'paragraph' ? 'paragraph' : 'line');
+  if (!annotation.text) {
+    toast('当前没有可划线的正文', true);
+    return;
+  }
+  try {
+    await api('/api/reader/highlight', jsonBody({
+      bookId: state.currentBook.bookId,
+      chapterUid: state.chapters[state.chapterIndex].chapterUid,
+      chapterName: state.chapters[state.chapterIndex].title || '',
+      range: annotation.range,
+      markText: annotation.text,
+      contextAbstract: annotation.paragraph,
+      colorStyle: 0,
+      style: 1,
+    }));
+    toast(`已云端划线${kind === 'paragraph' ? '当前段' : '当前行'}`);
+  } catch (error) {
+    toast(`划线未发送：${error.message}`, true);
+  }
+}
+
+async function submitThought(content) {
+  const text = String(content || '').trim();
+  if (!text) return;
+  if (!state.currentBook || state.currentBook.isMp || state.chapterIndex < 0) {
+    toast('公众号文章暂不支持云端写想法', true);
+    return;
+  }
+  const annotation = currentAnnotationContext('line');
+  try {
+    await api('/api/reader/thought', jsonBody({
+      bookId: state.currentBook.bookId,
+      chapterUid: state.chapters[state.chapterIndex].chapterUid,
+      range: annotation.range,
+      abstract: annotation.line,
+      content: text,
+      type: 1,
+    }));
+    toast('想法已同步到微信读书');
+  } catch (error) {
+    toast(`想法未发送：${error.message}`, true);
+  }
 }
 
 function goPrevious() {
@@ -890,12 +1069,25 @@ function waitForReportIdle(timeoutMs = 900) {
   });
 }
 
+function schedulePositionSync() {
+  clearTimeout(state.positionSyncTimer);
+  state.positionSyncTimer = null;
+  if (!state.currentBook || !state.reading || state.currentBook.isMp || state.chapterIndex < 0) return;
+  state.positionSyncTimer = setTimeout(() => {
+    state.positionSyncTimer = null;
+    if (state.reportInFlight) {
+      state.positionSyncQueued = true;
+      return;
+    }
+    reportReading(true);
+  }, 450);
+}
+
 async function reportReading(force = false, deadlineMs = 0) {
   if (!state.currentBook || !state.reading || state.chapterIndex < 0 || state.currentBook.isMp) return;
   if (state.reportInFlight) {
-    const waitMs = deadlineMs ? Math.max(0, Math.min(900, deadlineMs - Date.now())) : 900;
-    await waitForReportIdle(waitMs);
-    if (state.reportInFlight) return;
+    state.positionSyncQueued = true;
+    return;
   }
   if (state.pendingReports.length) {
     const timeoutMs = deadlineMs ? Math.max(0, deadlineMs - Date.now()) : 0;
@@ -936,6 +1128,10 @@ async function reportReading(force = false, deadlineMs = 0) {
     if (force) toast(`阅读时长暂未上报：${error.message}`, true);
   } finally {
     state.reportInFlight = false;
+    if (state.positionSyncQueued) {
+      state.positionSyncQueued = false;
+      schedulePositionSync();
+    }
   }
 }
 
@@ -965,6 +1161,7 @@ function showHelp() {
   state.pollTimer = null;
   $('help-line-interval').value = String(state.lineIntervalMs / 1000);
   updateTrayWidthControls();
+  updateProgressDisplay(state.bookProgress);
   $('qr-modal').classList.add('hidden');
   $('help-modal').classList.remove('hidden');
   $('modal-backdrop').classList.remove('hidden');
@@ -1133,6 +1330,8 @@ function bindEvents() {
   $('line-toggle').addEventListener('click', () => setLineAuto(!state.lineAuto));
   $('line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
   $('help-line-interval').addEventListener('change', (event) => setLineInterval(event.target.value, true));
+  $('show-line-progress').addEventListener('change', (event) => setProgressDisplay('lines', event.target.checked, true));
+  $('show-percent-progress').addEventListener('change', (event) => setProgressDisplay('percent', event.target.checked, true));
   $('tray-width-mode').addEventListener('change', (event) => setTrayWidth(event.target.value, $('tray-width-number').value, true));
   $('tray-width-chars').addEventListener('input', (event) => setTrayWidth(state.trayWidthMode, event.target.value));
   $('tray-width-number').addEventListener('change', (event) => setTrayWidth(state.trayWidthMode, event.target.value, true));
@@ -1155,18 +1354,25 @@ function bindEvents() {
     if (event.target === $('modal-backdrop')) closeModal();
   });
   window.wefish.onCommand((command) => {
-    if (command === 'sync') loadShelf();
-    if (command === 'page-previous') goPrevious();
-    if (command === 'page-next') goNext();
-    if (command === 'chapter-previous') goPreviousChapter();
-    if (command === 'chapter-next') goNextChapter();
-    if (command === 'line-previous') nextLine(-1);
-    if (command === 'line-next') nextLine(1);
-    if (command === 'line-toggle') setLineAuto(!state.lineAuto);
-    if (command === 'help') showHelp();
-    if (command.startsWith('line-interval:')) setLineInterval(command.split(':', 2)[1], true);
-    if (command.startsWith('tray-width:')) {
-      const [, mode, chars] = command.split(':');
+    const action = typeof command === 'string' ? command : command?.type;
+    if (action === 'sync') loadShelf();
+    if (action === 'page-previous') goPrevious();
+    if (action === 'page-next') goNext();
+    if (action === 'chapter-previous') goPreviousChapter();
+    if (action === 'chapter-next') goNextChapter();
+    if (action === 'line-previous') nextLine(-1);
+    if (action === 'line-next') nextLine(1);
+    if (action === 'line-toggle') setLineAuto(!state.lineAuto);
+    if (action === 'help') showHelp();
+    if (action === 'highlight-line') highlightCurrent('line');
+    if (action === 'highlight-paragraph') highlightCurrent('paragraph');
+    if (action === 'thought-submit') submitThought(command.text);
+    if (action === 'progress-lines:toggle') setProgressDisplay('lines', !state.showLineProgress, true);
+    if (action === 'progress-percent:toggle') setProgressDisplay('percent', !state.showPercent, true);
+    if (typeof action !== 'string') return;
+    if (action.startsWith('line-interval:')) setLineInterval(action.split(':', 2)[1], true);
+    if (action.startsWith('tray-width:')) {
+      const [, mode, chars] = action.split(':');
       if (mode === 'settings') {
         showHelp();
         requestAnimationFrame(() => $('tray-width-mode')?.focus());
@@ -1212,6 +1418,13 @@ async function boot() {
     const chars = Number(localStorage.getItem('wefish.trayWidthChars') || 28);
     setTrayWidth(mode, chars);
   } catch (_) { /* private mode */ }
+  try {
+    const storedLines = localStorage.getItem('wefish.progress.lines');
+    const storedPercent = localStorage.getItem('wefish.progress.percent');
+    if (storedLines !== null) state.showLineProgress = storedLines !== 'false';
+    if (storedPercent !== null) state.showPercent = storedPercent !== 'false';
+  } catch (_) { /* private mode */ }
+  updateProgressDisplay(0);
   state.timer = setInterval(tick, 1000);
   $('duration').textContent = formatDuration(state.elapsed);
   try {

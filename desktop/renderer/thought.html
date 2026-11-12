@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>写想法</title>
+  <link rel="stylesheet" href="./thought.css" />
+</head>
+<body>
+  <main class="thought-card">
+    <header class="thought-head">
+      <div><span class="eyebrow">WEFISH NOTE</span><h1>写想法</h1></div>
+      <button id="close" aria-label="关闭">×</button>
+    </header>
+    <p class="thought-context" id="context">当前阅读位置</p>
+    <textarea id="thought" autofocus placeholder="写下这一段的想法…"></textarea>
+    <footer><span>Enter 换行 · Ctrl+Enter 发送</span><button id="send">发送到微信读书</button></footer>
+  </main>
+  <script src="./thought.js"></script>
+</body>
+</html>

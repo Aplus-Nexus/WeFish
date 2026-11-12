@@ -40,3 +40,11 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   text-overflow: ellipsis;
   user-select: none;
 }
+
+.mini-progress {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  color: #b8f27c;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}

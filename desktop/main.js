@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, screen, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, screen, dialog, clipboard } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -30,6 +30,7 @@ const SHORTCUTS = Object.freeze({
 });
 let panel = null;
 let miniSurface = null;
+let thoughtWindow = null;
 let tray = null;
 let trayMenu = null;
 let bridge = null;
@@ -45,6 +46,16 @@ let panelPlaced = false;
 let rendererReady = Promise.resolve();
 let miniSurfaceReady = Promise.resolve();
 let miniSnapshot = { text: '', rawText: '', widthMode: 'dynamic', widthChars: 28 };
+let currentContext = {
+  line: '',
+  paragraph: '',
+  bookId: '',
+  bookTitle: '',
+  chapterUid: '',
+  chapterName: '',
+  range: '0-0',
+  paragraphRange: '0-0',
+};
 
 function trayImage() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
@@ -133,6 +144,10 @@ function updateMiniSurface(value) {
     rawText: String(payload.rawText || payload.text || ''),
     widthMode: ['dynamic', 'fixed', 'fill'].includes(payload.widthMode) ? payload.widthMode : 'dynamic',
     widthChars: Math.max(12, Math.min(120, Math.round(Number(payload.widthChars) || 28))),
+    lineProgress: String(payload.lineProgress || ''),
+    percent: Number(payload.percent || 0),
+    showLineProgress: payload.showLineProgress !== false,
+    showPercent: payload.showPercent !== false,
   };
   if (!isWindows || !miniSurface || miniSurface.isDestroyed()) return;
   miniSurfaceReady.then(() => {
@@ -159,6 +174,19 @@ function setTrayLine(value) {
     .replace(/[\t\n\r ]+/g, ' ')
     .replace(/^ +| +$/g, '')
     .slice(0, 160);
+  if (value && typeof value === 'object') {
+    currentContext = {
+      ...currentContext,
+      line: String(payload.rawText || payload.text || '').trim(),
+      paragraph: String(payload.paragraph || payload.rawText || payload.text || '').trim(),
+      bookId: String(payload.bookId || currentContext.bookId || ''),
+      bookTitle: String(payload.bookTitle || currentContext.bookTitle || ''),
+      chapterUid: String(payload.chapterUid ?? currentContext.chapterUid ?? ''),
+      chapterName: String(payload.chapterName || currentContext.chapterName || ''),
+      range: String(payload.range || currentContext.range || '0-0'),
+      paragraphRange: String(payload.paragraphRange || currentContext.paragraphRange || payload.range || '0-0'),
+    };
+  }
   updateMiniSurface({ ...payload, text: String(payload.text || '') });
   if (!tray || officeTitleMode) return;
   if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
@@ -217,6 +245,50 @@ function createPanel() {
   panel.on('closed', () => { panel = null; });
 }
 
+function createThoughtWindow() {
+  thoughtWindow = new BrowserWindow({
+    width: 390,
+    height: 250,
+    minWidth: 340,
+    minHeight: 220,
+    maxWidth: 520,
+    maxHeight: 420,
+    show: false,
+    frame: false,
+    resizable: true,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#101413',
+    title: '写想法',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  thoughtWindow.loadFile(path.join(__dirname, 'renderer', 'thought.html'));
+  thoughtWindow.on('closed', () => { thoughtWindow = null; });
+}
+
+function openThoughtWindow() {
+  if (!thoughtWindow || thoughtWindow.isDestroyed()) createThoughtWindow();
+  const show = () => {
+    if (!thoughtWindow || thoughtWindow.isDestroyed()) return;
+    thoughtWindow.webContents.send('thought-context', currentContext);
+    thoughtWindow.show();
+    thoughtWindow.focus();
+  };
+  if (thoughtWindow.webContents.isLoading()) thoughtWindow.webContents.once('did-finish-load', show);
+  else show();
+}
+
+function copyCurrentContent(kind) {
+  const value = kind === 'paragraph' ? currentContext.paragraph : currentContext.line;
+  if (!value) return;
+  clipboard.writeText(value);
+}
+
 function createWindowsReadingSurface() {
   if (!isWindows) return;
   miniSurface = new BrowserWindow({
@@ -260,6 +332,17 @@ function createTray() {
     { label: '上一行', accelerator: SHORTCUTS.linePrevious, click: () => dispatchCommand('line-previous') },
     { label: '下一行', accelerator: SHORTCUTS.lineNext, click: () => dispatchCommand('line-next') },
     { label: '自动逐行', accelerator: SHORTCUTS.lineToggle, click: () => dispatchCommand('line-toggle') },
+    { label: '当前内容', submenu: [
+      { label: '复制当前行', click: () => copyCurrentContent('line') },
+      { label: '复制当前段', click: () => copyCurrentContent('paragraph') },
+      { label: '划线当前行', click: () => dispatchCommand('highlight-line') },
+      { label: '划线当前段', click: () => dispatchCommand('highlight-paragraph') },
+      { label: '写想法', click: openThoughtWindow },
+    ] },
+    { label: '阅读进度显示', submenu: [
+      { label: '显示 / 隐藏行数', click: () => dispatchCommand('progress-lines:toggle') },
+      { label: '显示 / 隐藏百分比', click: () => dispatchCommand('progress-percent:toggle') },
+    ] },
     { label: '逐行速度', submenu: [
       { label: '0.5 秒（快）', click: () => dispatchCommand('line-interval:0.5') },
       { label: '1 秒（默认）', click: () => dispatchCommand('line-interval:1') },
@@ -478,8 +561,18 @@ async function assertMockBridge() {
   if (!stats.stats || !stats.notes) throw new Error('mock reading data is missing');
   const statsGet = await bridgeRequest('GET', '/api/stats');
   if (!statsGet.stats || !statsGet.notes) throw new Error('GET mock reading data is missing');
+  const weekly = await bridgeRequest('GET', '/api/stats?mode=weekly');
+  if (weekly.mode !== 'weekly' || weekly.stats.mode !== 'weekly') throw new Error('weekly cloud stats mode was not forwarded');
   const remote = await bridgeRequest('GET', '/api/reader/progress?bookId=wf-001');
   if (String(remote.chapterUid) !== '1') throw new Error('mock progress pull failed');
+  const highlight = await bridgeRequest('POST', '/api/reader/highlight', {
+    bookId: 'wf-001', chapterUid: 1, range: '4-10', markText: '合成当前行', style: 1,
+  });
+  if (Number(highlight.succ) !== 1) throw new Error('mock cloud highlight failed');
+  const thought = await bridgeRequest('POST', '/api/reader/thought', {
+    bookId: 'wf-001', chapterUid: 1, range: '4-10', abstract: '合成当前行', content: '合成想法', type: 1,
+  });
+  if (Number(thought.succ) !== 1) throw new Error('mock cloud thought failed');
 
   const qr = await bridgeRequest('POST', '/api/qr/begin', {});
   const login = await bridgeRequest('POST', '/api/qr/poll', { uid: qr.uid });
@@ -508,7 +601,7 @@ async function assertMockRenderer() {
     throw new Error('renderer did not preload the next pages');
   }
   const next = await panel.webContents.executeJavaScript('window.__wefishTest.nextPage()', true);
-  if (next.pageIndex !== 1) throw new Error('renderer next-page action failed');
+  if (next.pageIndex !== Math.min(snapshot.pageCount - 1, snapshot.pageIndex + 1)) throw new Error('renderer next-page action failed');
   const line = await panel.webContents.executeJavaScript('window.__wefishTest.nextLine()', true);
   if (!line.line) throw new Error('renderer line ticker did not produce text');
   const jumped = await panel.webContents.executeJavaScript('window.__wefishTest.jumpToProgress(50)', true);
@@ -533,6 +626,11 @@ async function assertMockRenderer() {
     const item = trayMenu?.items.find((candidate) => candidate.label === label);
     if (!item || item.accelerator !== accelerator) throw new Error(`tray shortcut is missing: ${label}`);
   }
+  const contentMenu = trayMenu?.items.find((candidate) => candidate.label === '当前内容');
+  const contentLabels = contentMenu?.submenu?.items.map((item) => item.label) || [];
+  for (const label of ['复制当前行', '复制当前段', '划线当前行', '划线当前段', '写想法']) {
+    if (!contentLabels.includes(label)) throw new Error(`tray content action is missing: ${label}`);
+  }
   if (isWindows) {
     await miniSurfaceReady;
     if (!miniSurface || !miniSurface.isVisible()) throw new Error('Windows reading surface is not visible');
@@ -548,7 +646,7 @@ async function assertMockRenderer() {
     value.storedMode !== value.mode || Number(value.storedChars) !== value.chars
   ))) throw new Error(`tray width settings did not persist: ${JSON.stringify(widthSnapshots)}`);
   const insights = await panel.webContents.executeJavaScript('window.__wefishTest.openInsights()', true);
-  if (!insights.includes('阅读时长') || !insights.includes('会员权益') || insights.includes('未知接口')) {
+  if (!insights.includes('本周阅读时长') || !insights.includes('本月阅读时长') || !insights.includes('会员权益') || insights.includes('未知接口')) {
     throw new Error('renderer reading-data panel did not use the working GET contract');
   }
   const chrome = await panel.webContents.executeJavaScript(`({
@@ -560,18 +658,33 @@ async function assertMockRenderer() {
     hasShelfSearch: Boolean(document.querySelector('#shelf-search')),
     hasRecentShelf: Boolean(document.querySelector('#recent-section'))
       && Boolean(document.querySelector('#recent-list')),
+    hasProgressRing: Boolean(document.querySelector('#progress-ring-value'))
+      && Boolean(document.querySelector('#progress-percent'))
+      && Boolean(document.querySelector('#progress-line-count')),
+    hasProgressSettings: Boolean(document.querySelector('#show-line-progress'))
+      && Boolean(document.querySelector('#show-percent-progress')),
     hasTrayWidthSettings: document.body.textContent.includes('顶部栏阅读区域')
       && Boolean(document.querySelector('#tray-width-mode'))
       && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasTrayWidthSettings) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasProgressRing || !chrome.hasProgressSettings || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
   }
   const shelfSearch = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfSearch()', true);
   if (!shelfSearch || shelfSearch.matched !== 1 || shelfSearch.recentCount !== 1 || shelfSearch.total !== 2) {
     throw new Error(`shelf search did not filter locally: ${JSON.stringify(shelfSearch)}`);
   }
+  openThoughtWindow();
+  await new Promise((resolve, reject) => {
+    if (!thoughtWindow || thoughtWindow.isDestroyed()) return reject(new Error('thought window was not created'));
+    if (!thoughtWindow.webContents.isLoading()) return resolve();
+    const timer = setTimeout(() => reject(new Error('thought window did not load')), 4000);
+    thoughtWindow.webContents.once('did-finish-load', () => { clearTimeout(timer); resolve(); });
+  });
+  const thoughtReady = await thoughtWindow.webContents.executeJavaScript('Boolean(document.querySelector("#thought")) && document.body.textContent.includes("Ctrl+Enter")', true);
+  if (!thoughtReady) throw new Error('thought window input contract is incomplete');
+  thoughtWindow.hide();
   if (panel.isVisible()) throw new Error('reader panel was shown by menu-bar reading actions');
   return snapshot;
 }
@@ -586,10 +699,22 @@ if (hasInstanceLock) {
   app.whenReady().then(async () => {
     if (process.platform === 'darwin' && app.dock) app.dock.hide();
     createPanel();
+    createThoughtWindow();
     createWindowsReadingSurface();
     createTray();
     ipcMain.handle('bridge-url', () => bridgeUrl);
     ipcMain.on('line-ticker', (_event, value) => setTrayLine(value));
+    ipcMain.on('current-context', (_event, value) => {
+      if (!value || typeof value !== 'object') return;
+      currentContext = { ...currentContext, ...value };
+    });
+    ipcMain.on('thought-submit', (_event, value) => {
+      if (thoughtWindow && !thoughtWindow.isDestroyed()) thoughtWindow.hide();
+      dispatchCommand({ type: 'thought-submit', text: String(value || '') });
+    });
+    ipcMain.on('thought-cancel', () => {
+      if (thoughtWindow && !thoughtWindow.isDestroyed()) thoughtWindow.hide();
+    });
     ipcMain.on('mini-ready', () => updateMiniSurface(miniSnapshot));
     ipcMain.on('hide-panel', () => setPanelVisible(false));
     ipcMain.on('show-panel', () => setPanelVisible(true));
