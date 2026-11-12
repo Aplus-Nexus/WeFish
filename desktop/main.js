@@ -8,19 +8,38 @@ const mockMode = process.argv.includes('--mock');
 const selfTestMode = process.argv.includes('--self-test');
 const showOnStart = process.argv.includes('--show');
 const hasInstanceLock = app.requestSingleInstanceLock();
+const isWindows = process.platform === 'win32';
+const SHORTCUTS = Object.freeze({
+  togglePanel: 'CommandOrControl+Alt+M',
+  sync: 'CommandOrControl+Alt+R',
+  pagePrevious: 'CommandOrControl+Alt+Left',
+  pageNext: 'CommandOrControl+Alt+Right',
+  chapterPrevious: 'CommandOrControl+Alt+Shift+Left',
+  chapterNext: 'CommandOrControl+Alt+Shift+Right',
+  linePrevious: 'CommandOrControl+Alt+Up',
+  lineNext: 'CommandOrControl+Alt+Down',
+  lineToggle: 'CommandOrControl+Alt+Space',
+  help: 'CommandOrControl+Alt+H',
+  compact: 'CommandOrControl+Alt+P',
+  officeTitle: 'CommandOrControl+Alt+T',
+});
 let panel = null;
+let miniSurface = null;
 let tray = null;
+let trayMenu = null;
 let bridge = null;
 let bridgeUrl = '';
 let stopping = false;
 let officeTitleMode = false;
 let officeTitleMenuItem = null;
-let compactMode = false;
+let compactMode = isWindows;
 let compactMenuItem = null;
 let quitInProgress = false;
 let trayLineText = '';
 let panelPlaced = false;
 let rendererReady = Promise.resolve();
+let miniSurfaceReady = Promise.resolve();
+let miniSnapshot = { text: '', rawText: '', widthMode: 'dynamic', widthChars: 28 };
 
 function trayImage() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
@@ -37,7 +56,7 @@ function positionPanel(force = false) {
   const display = screen.getPrimaryDisplay();
   const work = display.workArea;
   const width = 390;
-  const height = compactMode ? 270 : 650;
+  const height = !isWindows && compactMode ? 270 : 650;
   panel.setBounds({ x: work.x + work.width - width - 14, y: work.y + 12, width, height }, false);
   panelPlaced = true;
 }
@@ -59,30 +78,97 @@ function togglePanel() {
   setPanelVisible(!panel || !panel.isVisible());
 }
 
+function dispatchCommand(command) {
+  if (!panel || panel.isDestroyed()) return;
+  const send = () => {
+    if (panel && !panel.isDestroyed()) panel.webContents.send('command', command);
+  };
+  if (panel.webContents.isLoading()) rendererReady.then(send).catch(() => {});
+  else send();
+}
+
+function miniSurfaceBounds(snapshot = miniSnapshot) {
+  const display = screen.getPrimaryDisplay();
+  const work = display.workArea;
+  const widthChars = Math.max(12, Math.min(120, Number(snapshot.widthChars) || 28));
+  const textChars = Math.max(12, Array.from(String(snapshot.text || '')).length);
+  const chars = snapshot.widthMode === 'fill'
+    ? widthChars
+    : snapshot.widthMode === 'fixed'
+      ? widthChars
+      : textChars;
+  const maxWidth = Math.max(180, work.width - 28);
+  const width = Math.min(maxWidth, Math.max(180, 36 + chars * 16));
+  const height = 68;
+  return {
+    x: work.x + work.width - width - 14,
+    y: work.y + work.height - height - 12,
+    width,
+    height,
+  };
+}
+
+function setMiniSurfaceVisible(visible) {
+  if (!isWindows || !miniSurface || miniSurface.isDestroyed()) return;
+  if (visible && miniSnapshot.text) {
+    miniSurface.setAlwaysOnTop(true);
+    miniSurface.setBounds(miniSurfaceBounds(), false);
+    miniSurface.showInactive();
+    miniSurface.setAlwaysOnTop(true);
+    miniSurface.webContents.send('mini-update', miniSnapshot);
+  } else {
+    miniSurface.hide();
+  }
+}
+
+function updateMiniSurface(value) {
+  const payload = value && typeof value === 'object' ? value : { text: value };
+  miniSnapshot = {
+    text: String(payload.text || ''),
+    rawText: String(payload.rawText || payload.text || ''),
+    widthMode: ['dynamic', 'fixed', 'fill'].includes(payload.widthMode) ? payload.widthMode : 'dynamic',
+    widthChars: Math.max(12, Math.min(120, Math.round(Number(payload.widthChars) || 28))),
+  };
+  if (!isWindows || !miniSurface || miniSurface.isDestroyed()) return;
+  miniSurfaceReady.then(() => {
+    if (!miniSurface || miniSurface.isDestroyed()) return;
+    miniSurface.setBounds(miniSurfaceBounds(), false);
+    miniSurface.webContents.send('mini-update', miniSnapshot);
+    setMiniSurfaceVisible(compactMode);
+  }).catch(() => {});
+}
+
 function setOfficeTitleMode(enabled) {
   officeTitleMode = Boolean(enabled);
   panel?.setTitle(officeTitleMode ? '工作文档' : '阅读器');
-  tray?.setToolTip(officeTitleMode ? '工作文档' : (trayLineText || '阅读器'));
+  tray?.setToolTip(officeTitleMode ? '工作文档' : '阅读器');
   if (officeTitleMenuItem) officeTitleMenuItem.checked = officeTitleMode;
-  if (!officeTitleMode) setTrayLine(trayLineText);
+  if (!officeTitleMode && !isWindows) setTrayLine(trayLineText);
 }
 
 function setTrayLine(value) {
+  const payload = value && typeof value === 'object' ? value : { text: value };
   // Keep the renderer's non-breaking padding: macOS uses the title width to
   // reserve the visible menu-bar reading area.
-  trayLineText = String(value || '')
+  trayLineText = String(payload.text || '')
     .replace(/[\t\n\r ]+/g, ' ')
     .replace(/^ +| +$/g, '')
     .slice(0, 160);
+  updateMiniSurface({ ...payload, text: String(payload.text || '') });
   if (!tray || officeTitleMode) return;
   if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
     tray.setTitle(trayLineText);
   }
-  tray.setToolTip(trayLineText || '阅读器');
+  tray.setToolTip(process.platform === 'darwin' ? (trayLineText || '阅读器') : '阅读器');
 }
 
 function setCompactMode(enabled) {
   compactMode = Boolean(enabled);
+  if (isWindows) {
+    setMiniSurfaceVisible(compactMode);
+    if (compactMenuItem) compactMenuItem.checked = compactMode;
+    return;
+  }
   if (panel) {
     panel.setMinimumSize(390, 270);
     panel.setSize(390, compactMode ? 270 : 650);
@@ -121,9 +207,37 @@ function createPanel() {
     // The compact capsule is the stealth reading surface: it must remain in
     // the corner while the user works in another app. The full reader keeps
     // the convenient click-away dismissal behavior.
-    if (panel && panel.isVisible() && !compactMode && !panel.webContents.isDevToolsOpened()) setPanelVisible(false);
+    if (panel && panel.isVisible() && !isWindows && !compactMode && !panel.webContents.isDevToolsOpened()) setPanelVisible(false);
   });
   panel.on('closed', () => { panel = null; });
+}
+
+function createWindowsReadingSurface() {
+  if (!isWindows) return;
+  miniSurface = new BrowserWindow({
+    width: 360,
+    height: 68,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  miniSurface.setIgnoreMouseEvents(true, { forward: true });
+  miniSurfaceReady = new Promise((resolve) => miniSurface.webContents.once('did-finish-load', resolve));
+  miniSurface.loadFile(path.join(__dirname, 'renderer', 'mini.html'));
+  miniSurface.on('closed', () => { miniSurface = null; });
 }
 
 function createTray() {
@@ -131,41 +245,41 @@ function createTray() {
   tray.setToolTip('阅读器');
   tray.on('click', togglePanel);
   const menu = Menu.buildFromTemplate([
-    { label: '显示 / 隐藏阅读舱', accelerator: 'CommandOrControl+Alt+M', click: togglePanel },
+    { label: '显示 / 隐藏阅读舱', accelerator: SHORTCUTS.togglePanel, click: togglePanel },
     { type: 'separator' },
-    { label: '同步书架', accelerator: 'CommandOrControl+Alt+R', click: () => panel?.webContents.send('command', 'sync') },
-    { label: '上一页', accelerator: 'CommandOrControl+Alt+Left', click: () => panel?.webContents.send('command', 'page-previous') },
-    { label: '下一页', accelerator: 'CommandOrControl+Alt+Right', click: () => panel?.webContents.send('command', 'page-next') },
-    { label: '上一章', accelerator: 'CommandOrControl+Alt+Shift+Left', click: () => panel?.webContents.send('command', 'chapter-previous') },
-    { label: '下一章', accelerator: 'CommandOrControl+Alt+Shift+Right', click: () => panel?.webContents.send('command', 'chapter-next') },
-    { label: '上一行', accelerator: 'CommandOrControl+Alt+Up', click: () => panel?.webContents.send('command', 'line-previous') },
-    { label: '下一行', accelerator: 'CommandOrControl+Alt+Down', click: () => panel?.webContents.send('command', 'line-next') },
-    { label: '自动逐行', accelerator: 'CommandOrControl+Alt+Space', click: () => panel?.webContents.send('command', 'line-toggle') },
+    { label: '同步书架', accelerator: SHORTCUTS.sync, click: () => dispatchCommand('sync') },
+    { label: '上一页', accelerator: SHORTCUTS.pagePrevious, click: () => dispatchCommand('page-previous') },
+    { label: '下一页', accelerator: SHORTCUTS.pageNext, click: () => dispatchCommand('page-next') },
+    { label: '上一章', accelerator: SHORTCUTS.chapterPrevious, click: () => dispatchCommand('chapter-previous') },
+    { label: '下一章', accelerator: SHORTCUTS.chapterNext, click: () => dispatchCommand('chapter-next') },
+    { label: '上一行', accelerator: SHORTCUTS.linePrevious, click: () => dispatchCommand('line-previous') },
+    { label: '下一行', accelerator: SHORTCUTS.lineNext, click: () => dispatchCommand('line-next') },
+    { label: '自动逐行', accelerator: SHORTCUTS.lineToggle, click: () => dispatchCommand('line-toggle') },
     { label: '逐行速度', submenu: [
-      { label: '0.5 秒（快）', click: () => panel?.webContents.send('command', 'line-interval:0.5') },
-      { label: '1 秒（默认）', click: () => panel?.webContents.send('command', 'line-interval:1') },
-      { label: '2 秒', click: () => panel?.webContents.send('command', 'line-interval:2') },
-      { label: '3 秒', click: () => panel?.webContents.send('command', 'line-interval:3') },
-      { label: '5 秒（慢）', click: () => panel?.webContents.send('command', 'line-interval:5') },
+      { label: '0.5 秒（快）', click: () => dispatchCommand('line-interval:0.5') },
+      { label: '1 秒（默认）', click: () => dispatchCommand('line-interval:1') },
+      { label: '2 秒', click: () => dispatchCommand('line-interval:2') },
+      { label: '3 秒', click: () => dispatchCommand('line-interval:3') },
+      { label: '5 秒（慢）', click: () => dispatchCommand('line-interval:5') },
     ] },
     { label: '顶部栏阅读区域', submenu: [
-      { label: '跟随文本（动态）', click: () => panel?.webContents.send('command', 'tray-width:dynamic') },
-      { label: '固定 28 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:28') },
-      { label: '固定 40 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:40') },
-      { label: '固定 56 字', click: () => panel?.webContents.send('command', 'tray-width:fixed:56') },
-      { label: '尽量占满空余位置', click: () => panel?.webContents.send('command', 'tray-width:fill') },
+      { label: '跟随文本（动态）', click: () => dispatchCommand('tray-width:dynamic') },
+      { label: '固定 28 字', click: () => dispatchCommand('tray-width:fixed:28') },
+      { label: '固定 40 字', click: () => dispatchCommand('tray-width:fixed:40') },
+      { label: '固定 56 字', click: () => dispatchCommand('tray-width:fixed:56') },
+      { label: '尽量占满空余位置', click: () => dispatchCommand('tray-width:fill') },
       { type: 'separator' },
-      { label: '打开宽度设置', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'tray-width:settings'); } },
+      { label: '打开宽度设置', click: () => { setPanelVisible(true); dispatchCommand('tray-width:settings'); } },
     ] },
-    { label: '快捷键与使用说明', accelerator: 'CommandOrControl+Alt+H', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); } },
-    { label: '微信扫码', click: () => { setPanelVisible(true); panel?.webContents.send('command', 'qr'); } },
-    { id: 'compact-mode', label: '小窗模式', accelerator: 'CommandOrControl+Alt+P', type: 'checkbox', click: (item) => setCompactMode(item.checked) },
-    { id: 'office-title-mode', label: '工作文档标题', accelerator: 'CommandOrControl+Alt+T', type: 'checkbox', click: (item) => setOfficeTitleMode(item.checked) },
+    { label: '快捷键与使用说明', accelerator: SHORTCUTS.help, click: () => { setPanelVisible(true); dispatchCommand('help'); } },
+    { label: '微信扫码', click: () => { setPanelVisible(true); dispatchCommand('qr'); } },
+    { id: 'compact-mode', label: '小窗模式', accelerator: SHORTCUTS.compact, type: 'checkbox', click: (item) => setCompactMode(item.checked) },
+    { id: 'office-title-mode', label: '工作文档标题', accelerator: SHORTCUTS.officeTitle, type: 'checkbox', click: (item) => setOfficeTitleMode(item.checked) },
     { type: 'separator' },
     { label: '关于 / 许可证', click: () => dialog.showMessageBox(panel || undefined, {
       type: 'info',
-      title: '上班墨鱼 · WeFish',
-      message: '上班墨鱼 WeFish',
+      title: 'WeFish 桌面阅读器',
+      message: 'WeFish 桌面阅读器',
       detail: '本程序基于 finlater/weread.koplugin 的协议处理与内容解码思路改编。\n\n本项目及改编部分按 GNU Affero General Public License 3.0 发布；不提供任何保证。安装包内的 licenses/LICENSE 与 licenses/NOTICE 保存完整许可证和来源说明，项目源码包含对应源码。\n\nWeFish 与微信读书、腾讯或 KOReader 没有隶属、背书或赞助关系。',
       buttons: ['知道了'],
     }) },
@@ -173,6 +287,8 @@ function createTray() {
   ]);
   compactMenuItem = menu.getMenuItemById('compact-mode');
   officeTitleMenuItem = menu.getMenuItemById('office-title-mode');
+  compactMenuItem.checked = compactMode;
+  trayMenu = menu;
   tray.setContextMenu(menu);
 }
 
@@ -225,7 +341,10 @@ function bridgeCommand() {
     }
     return { command: path.join(local, name), args: [] };
   }
-  return { command: process.env.WEFISH_PYTHON || 'python3', args: [path.join(__dirname, '..', 'wefish_service.py')] };
+  return {
+    command: process.env.WEFISH_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
+    args: [path.join(__dirname, '..', 'wefish_service.py')],
+  };
 }
 
 function startBridge() {
@@ -260,19 +379,18 @@ function startBridge() {
 }
 
 function registerShortcuts() {
-  const modifier = 'CommandOrControl+Alt+';
-  globalShortcut.register(`${modifier}M`, togglePanel);
-  globalShortcut.register(`${modifier}H`, () => { setPanelVisible(true); panel?.webContents.send('command', 'help'); });
-  globalShortcut.register(`${modifier}R`, () => panel?.webContents.send('command', 'sync'));
-  globalShortcut.register(`${modifier}Left`, () => panel?.webContents.send('command', 'page-previous'));
-  globalShortcut.register(`${modifier}Right`, () => panel?.webContents.send('command', 'page-next'));
-  globalShortcut.register(`${modifier}Shift+Left`, () => panel?.webContents.send('command', 'chapter-previous'));
-  globalShortcut.register(`${modifier}Shift+Right`, () => panel?.webContents.send('command', 'chapter-next'));
-  globalShortcut.register(`${modifier}Up`, () => panel?.webContents.send('command', 'line-previous'));
-  globalShortcut.register(`${modifier}Down`, () => panel?.webContents.send('command', 'line-next'));
-  globalShortcut.register(`${modifier}Space`, () => panel?.webContents.send('command', 'line-toggle'));
-  globalShortcut.register(`${modifier}T`, () => setOfficeTitleMode(!officeTitleMode));
-  globalShortcut.register(`${modifier}P`, () => setCompactMode(!compactMode));
+  globalShortcut.register(SHORTCUTS.togglePanel, togglePanel);
+  globalShortcut.register(SHORTCUTS.help, () => { setPanelVisible(true); dispatchCommand('help'); });
+  globalShortcut.register(SHORTCUTS.sync, () => dispatchCommand('sync'));
+  globalShortcut.register(SHORTCUTS.pagePrevious, () => dispatchCommand('page-previous'));
+  globalShortcut.register(SHORTCUTS.pageNext, () => dispatchCommand('page-next'));
+  globalShortcut.register(SHORTCUTS.chapterPrevious, () => dispatchCommand('chapter-previous'));
+  globalShortcut.register(SHORTCUTS.chapterNext, () => dispatchCommand('chapter-next'));
+  globalShortcut.register(SHORTCUTS.linePrevious, () => dispatchCommand('line-previous'));
+  globalShortcut.register(SHORTCUTS.lineNext, () => dispatchCommand('line-next'));
+  globalShortcut.register(SHORTCUTS.lineToggle, () => dispatchCommand('line-toggle'));
+  globalShortcut.register(SHORTCUTS.officeTitle, () => setOfficeTitleMode(!officeTitleMode));
+  globalShortcut.register(SHORTCUTS.compact, () => setCompactMode(!compactMode));
 }
 
 function assertBridgeHealth() {
@@ -392,6 +510,38 @@ async function assertMockRenderer() {
   if (jumped.chapterIndex !== 1 || jumped.pageIndex < 1) throw new Error(`renderer position jump failed: ${JSON.stringify(jumped)}`);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (!trayLineText) throw new Error('tray line IPC did not receive text');
+  const requiredMenuShortcuts = [
+    ['显示 / 隐藏阅读舱', SHORTCUTS.togglePanel],
+    ['同步书架', SHORTCUTS.sync],
+    ['上一页', SHORTCUTS.pagePrevious],
+    ['下一页', SHORTCUTS.pageNext],
+    ['上一章', SHORTCUTS.chapterPrevious],
+    ['下一章', SHORTCUTS.chapterNext],
+    ['上一行', SHORTCUTS.linePrevious],
+    ['下一行', SHORTCUTS.lineNext],
+    ['自动逐行', SHORTCUTS.lineToggle],
+    ['快捷键与使用说明', SHORTCUTS.help],
+    ['小窗模式', SHORTCUTS.compact],
+    ['工作文档标题', SHORTCUTS.officeTitle],
+  ];
+  for (const [label, accelerator] of requiredMenuShortcuts) {
+    const item = trayMenu?.items.find((candidate) => candidate.label === label);
+    if (!item || item.accelerator !== accelerator) throw new Error(`tray shortcut is missing: ${label}`);
+  }
+  if (isWindows) {
+    await miniSurfaceReady;
+    if (!miniSurface || !miniSurface.isVisible()) throw new Error('Windows reading surface is not visible');
+    const miniText = await miniSurface.webContents.executeJavaScript('document.querySelector("#mini-line").textContent', true);
+    if (!miniText) throw new Error('Windows reading surface has no current line');
+    setCompactMode(false);
+    if (miniSurface.isVisible()) throw new Error('Windows reading surface did not hide');
+    setCompactMode(true);
+    if (!miniSurface.isVisible()) throw new Error('Windows reading surface did not restore');
+  }
+  const widthSnapshots = await panel.webContents.executeJavaScript('window.__wefishTest.checkTrayWidths()', true);
+  if (!Array.isArray(widthSnapshots) || widthSnapshots.length !== 3 || widthSnapshots.some((value) => (
+    value.storedMode !== value.mode || Number(value.storedChars) !== value.chars
+  ))) throw new Error(`tray width settings did not persist: ${JSON.stringify(widthSnapshots)}`);
   const insights = await panel.webContents.executeJavaScript('window.__wefishTest.openInsights()', true);
   if (!insights.includes('阅读时长') || !insights.includes('会员权益') || insights.includes('未知接口')) {
     throw new Error('renderer reading-data panel did not use the working GET contract');
@@ -424,9 +574,11 @@ if (hasInstanceLock) {
   app.whenReady().then(async () => {
     if (process.platform === 'darwin' && app.dock) app.dock.hide();
     createPanel();
+    createWindowsReadingSurface();
     createTray();
     ipcMain.handle('bridge-url', () => bridgeUrl);
     ipcMain.on('line-ticker', (_event, value) => setTrayLine(value));
+    ipcMain.on('mini-ready', () => updateMiniSurface(miniSnapshot));
     ipcMain.on('hide-panel', () => setPanelVisible(false));
     ipcMain.on('show-panel', () => setPanelVisible(true));
     ipcMain.on('reading-flushed', () => {
