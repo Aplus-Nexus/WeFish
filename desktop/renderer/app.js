@@ -32,6 +32,7 @@ const state = {
   trayWidthMode: 'dynamic',
   trayWidthChars: 28,
   shelfBooks: [],
+  recentBooks: [],
   shelfQuery: '',
   shelfLoaded: false,
   shelfRequest: null,
@@ -127,6 +128,7 @@ function normalizeBook(book) {
     title: String(value.title || value.bookName || value.name || value.bookId || '未命名书籍'),
     author: String(value.author || value.authorName || ''),
     progress: Number(value.progress || 0),
+    readUpdateTime: Number(value.readUpdateTime || value.read_update_time || value.updateTime || 0),
   };
 }
 
@@ -134,14 +136,93 @@ function shelfSearchValue(value) {
   return String(value || '').trim().toLocaleLowerCase();
 }
 
+function formatRecentTime(value) {
+  const numeric = Number(value || 0);
+  const timestamp = numeric > 0 && numeric < 100000000000 ? numeric * 1000 : numeric;
+  if (!timestamp) return '刚刚打开';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  if (sameDay) return `今天 ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+}
+
+function bookMatchesQuery(book, query) {
+  if (!query) return true;
+  return [book.title, book.author, book.bookId].some((value) => shelfSearchValue(value).includes(query));
+}
+
+function createShelfItem(rawBook, recent = false) {
+  const book = normalizeBook(rawBook);
+  const button = document.createElement('button');
+  button.className = 'shelf-item';
+  button.innerHTML = '<span><strong></strong><small></small></span><span>→</span>';
+  button.querySelector('strong').textContent = book.title;
+  const meta = [book.author];
+  if (recent) meta.push(`最近 ${formatRecentTime(book.lastReadAt || book.readUpdateTime)}`);
+  if (Number.isFinite(Number(book.progress))) meta.push(`${Math.round(book.progress)}%`);
+  button.querySelector('small').textContent = meta.filter(Boolean).join(' · ');
+  button.addEventListener('click', () => loadBook(book));
+  return button;
+}
+
+function persistRecentBooks() {
+  try { localStorage.setItem('wefish.recentBooks', JSON.stringify(state.recentBooks.slice(0, 12))); } catch (_) { /* private mode */ }
+}
+
+function rememberBook(rawBook) {
+  const book = normalizeBook(rawBook);
+  if (!book.bookId) return;
+  const existing = state.recentBooks.find((item) => item.bookId === book.bookId) || {};
+  state.recentBooks = [
+    { ...existing, ...book, lastReadAt: Date.now() },
+    ...state.recentBooks.filter((item) => item.bookId !== book.bookId),
+  ].slice(0, 12);
+  persistRecentBooks();
+  renderShelfList();
+}
+
+function loadRecentBooks() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('wefish.recentBooks') || '[]');
+    state.recentBooks = Array.isArray(stored)
+      ? stored.map(normalizeBook).filter((book) => book.bookId).slice(0, 12)
+      : [];
+  } catch (_) {
+    state.recentBooks = [];
+  }
+}
+
+function mergeRecentBookDetails(books) {
+  const details = new Map(books.map((book) => [book.bookId, book]));
+  const merged = state.recentBooks.map((book) => ({ ...book, ...(details.get(book.bookId) || {}) }));
+  const known = new Set(merged.map((book) => book.bookId));
+  books
+    .filter((book) => book.bookId && book.readUpdateTime)
+    .forEach((book) => {
+      if (known.has(book.bookId)) return;
+      merged.push({ ...book, lastReadAt: book.readUpdateTime });
+    });
+  state.recentBooks = merged
+    .sort((left, right) => Number(right.lastReadAt || right.readUpdateTime || 0) - Number(left.lastReadAt || left.readUpdateTime || 0))
+    .slice(0, 12);
+  persistRecentBooks();
+}
+
 function renderShelfList() {
   const list = $('shelf-list');
-  list.replaceChildren();
   const query = shelfSearchValue(state.shelfQuery);
-  const books = state.shelfBooks.filter((book) => {
-    if (!query) return true;
-    return [book.title, book.author, book.bookId].some((value) => shelfSearchValue(value).includes(query));
-  });
+  const books = state.shelfBooks.filter((book) => bookMatchesQuery(book, query));
+  const recent = state.recentBooks.filter((book) => bookMatchesQuery(book, query));
+  $('shelf-count').textContent = query ? `${books.length} / ${state.shelfBooks.length} 本` : `${state.shelfBooks.length} 本`;
+  const recentSection = $('recent-section');
+  const recentList = $('recent-list');
+  recentList.replaceChildren();
+  recent.forEach((book) => recentList.appendChild(createShelfItem(book, true)));
+  recentSection.hidden = recent.length === 0;
+  list.replaceChildren();
   if (!state.shelfBooks.length) {
     const empty = document.createElement('div');
     empty.className = 'list-empty';
@@ -157,21 +238,13 @@ function renderShelfList() {
     return;
   }
   const fragment = document.createDocumentFragment();
-  books.forEach((rawBook) => {
-    const book = normalizeBook(rawBook);
-    const button = document.createElement('button');
-    button.className = 'shelf-item';
-    button.innerHTML = `<span><strong></strong><small></small></span><span>→</span>`;
-    button.querySelector('strong').textContent = book.title;
-    button.querySelector('small').textContent = [book.author, `${Math.round(book.progress)}%`].filter(Boolean).join(' · ');
-    button.addEventListener('click', () => loadBook(book));
-    fragment.appendChild(button);
-  });
+  books.forEach((book) => fragment.appendChild(createShelfItem(book)));
   list.appendChild(fragment);
 }
 
 function renderShelf(books) {
   state.shelfBooks = books.map(normalizeBook);
+  mergeRecentBookDetails(state.shelfBooks);
   state.shelfLoaded = true;
   renderShelfList();
 }
@@ -497,6 +570,9 @@ async function loadChapter(index, resume = null) {
     showPage(state.pageIndex, { lineIndex: resumeLineIndex });
     updateReaderPosition();
     state.reading = true;
+    if (window.location.hash !== '#self-test') {
+      rememberBook({ ...state.currentBook, progress: state.bookProgress, chapterUid: state.chapters[state.chapterIndex]?.chapterUid });
+    }
     setStatus('正在阅读', 'active');
     resetLineTimer();
   } catch (error) {
@@ -512,6 +588,7 @@ async function loadBook(rawBook) {
   const book = normalizeBook(rawBook);
   if (!book.bookId) return toast('这本书缺少 bookId', true);
   closeShelf();
+  if (window.location.hash !== '#self-test') rememberBook(book);
   state.currentBook = book;
   state.chapters = [];
   state.chapterIndex = -1;
@@ -1122,6 +1199,8 @@ function bindEvents() {
 async function boot() {
   bindEvents();
   loadPendingReports();
+  loadRecentBooks();
+  renderShelfList();
   try {
     const stored = Number(localStorage.getItem('wefish.lineInterval') || 1);
     if (stored >= 0.5 && stored <= 10) {
@@ -1201,6 +1280,7 @@ if (window.location.hash === '#self-test') {
     checkShelfSearch() {
       const original = {
         books: state.shelfBooks,
+        recent: state.recentBooks,
         query: state.shelfQuery,
         loaded: state.shelfLoaded,
         input: $('shelf-search').value,
@@ -1209,17 +1289,20 @@ if (window.location.hash === '#self-test') {
         normalizeBook({ bookId: 'wf-001', title: '山谷来信', author: '合成作者' }),
         normalizeBook({ bookId: 'wf-002', title: '海边札记', author: '另一位作者' }),
       ];
+      state.recentBooks = [normalizeBook({ bookId: 'wf-001', title: '山谷来信', author: '合成作者', lastReadAt: Date.now() })];
       state.shelfLoaded = true;
       state.shelfQuery = '山谷';
       $('shelf-search').value = state.shelfQuery;
       renderShelfList();
       const matched = $('shelf-list').querySelectorAll('.shelf-item').length;
+      const recentCount = $('recent-list').querySelectorAll('.shelf-item').length;
       state.shelfBooks = original.books;
+      state.recentBooks = original.recent;
       state.shelfQuery = original.query;
       state.shelfLoaded = original.loaded;
       $('shelf-search').value = original.input;
       renderShelfList();
-      return { matched, total: 2 };
+      return { matched, recentCount, total: 2 };
     },
   };
 }
