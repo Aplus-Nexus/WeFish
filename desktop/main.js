@@ -8,6 +8,11 @@ const mockMode = process.argv.includes('--mock');
 const selfTestMode = process.argv.includes('--self-test');
 const showOnStart = process.argv.includes('--show');
 const hasInstanceLock = app.requestSingleInstanceLock();
+if (!hasInstanceLock) {
+  // A second launch must terminate immediately. Leaving this process alive
+  // without a window makes macOS report an unresponsive application.
+  app.quit();
+}
 const isWindows = process.platform === 'win32';
 const SHORTCUTS = Object.freeze({
   togglePanel: 'CommandOrControl+Alt+M',
@@ -552,13 +557,18 @@ async function assertMockRenderer() {
     hasLineShortcuts: document.body.textContent.includes('上一行 / 下一行'),
     hasAutoLineShortcut: document.body.textContent.includes('自动逐行'),
     hasHideShortcut: document.body.textContent.includes('隐藏 / 唤起'),
+    hasShelfSearch: Boolean(document.querySelector('#shelf-search')),
     hasTrayWidthSettings: document.body.textContent.includes('顶部栏阅读区域')
       && Boolean(document.querySelector('#tray-width-mode'))
       && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasTrayWidthSettings) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
+  }
+  const shelfSearch = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfSearch()', true);
+  if (!shelfSearch || shelfSearch.matched !== 1 || shelfSearch.total !== 2) {
+    throw new Error(`shelf search did not filter locally: ${JSON.stringify(shelfSearch)}`);
   }
   if (panel.isVisible()) throw new Error('reader panel was shown by menu-bar reading actions');
   return snapshot;

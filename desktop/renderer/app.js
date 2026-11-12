@@ -31,6 +31,10 @@ const state = {
   lineIntervalMs: 1000,
   trayWidthMode: 'dynamic',
   trayWidthChars: 28,
+  shelfBooks: [],
+  shelfQuery: '',
+  shelfLoaded: false,
+  shelfRequest: null,
   syncStatus: 'idle',
   remoteProgress: null,
   pendingReports: [],
@@ -82,7 +86,7 @@ async function waitForBridge() {
 
 async function api(route, options = {}) {
   if (!state.baseUrl) throw new Error('本地阅读服务尚未就绪');
-  const { timeoutMs = 0, ...requestOptions } = options;
+  const { timeoutMs = 15000, ...requestOptions } = options;
   const controller = timeoutMs > 0 && typeof AbortController !== 'undefined' && !requestOptions.signal
     ? new AbortController()
     : null;
@@ -126,16 +130,33 @@ function normalizeBook(book) {
   };
 }
 
-function renderShelf(books) {
+function shelfSearchValue(value) {
+  return String(value || '').trim().toLocaleLowerCase();
+}
+
+function renderShelfList() {
   const list = $('shelf-list');
   list.replaceChildren();
-  if (!books.length) {
+  const query = shelfSearchValue(state.shelfQuery);
+  const books = state.shelfBooks.filter((book) => {
+    if (!query) return true;
+    return [book.title, book.author, book.bookId].some((value) => shelfSearchValue(value).includes(query));
+  });
+  if (!state.shelfBooks.length) {
     const empty = document.createElement('div');
     empty.className = 'list-empty';
     empty.textContent = '还没有拿到书架。可以先打开阅读链接，或确认 Skill 已启用。';
     list.appendChild(empty);
     return;
   }
+  if (!books.length) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = `没有找到包含“${state.shelfQuery.trim()}”的书。`;
+    list.appendChild(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
   books.forEach((rawBook) => {
     const book = normalizeBook(rawBook);
     const button = document.createElement('button');
@@ -144,32 +165,53 @@ function renderShelf(books) {
     button.querySelector('strong').textContent = book.title;
     button.querySelector('small').textContent = [book.author, `${Math.round(book.progress)}%`].filter(Boolean).join(' · ');
     button.addEventListener('click', () => loadBook(book));
-    list.appendChild(button);
+    fragment.appendChild(button);
   });
+  list.appendChild(fragment);
+}
+
+function renderShelf(books) {
+  state.shelfBooks = books.map(normalizeBook);
+  state.shelfLoaded = true;
+  renderShelfList();
 }
 
 async function openShelf() {
   $('shelf-drawer').setAttribute('aria-hidden', 'false');
-  await loadShelf();
+  if (!state.shelfLoaded) await loadShelf();
 }
 
 function closeShelf() {
   $('shelf-drawer').setAttribute('aria-hidden', 'true');
 }
 
-async function loadShelf() {
-  setStatus('同步书架中…');
-  try {
-    const data = await api('/api/shelf', jsonBody());
-    const books = Array.isArray(data.books) ? data.books : [];
-    renderShelf(books.map(normalizeBook));
-    setStatus(`${books.length} 本书已就绪`, 'active');
-    toast(books.length ? `书架已同步，共 ${books.length} 本` : '书架为空');
-  } catch (error) {
-    renderShelf([]);
-    setStatus('书架需要授权', 'warn');
-    toast(error.message, true);
+async function loadShelf({ force = false } = {}) {
+  if (state.shelfRequest && !force) return state.shelfRequest;
+  if (state.shelfLoaded && !force) {
+    renderShelfList();
+    return state.shelfBooks;
   }
+  setStatus('同步书架中…');
+  state.shelfRequest = (async () => {
+    try {
+      const data = await api('/api/shelf', { ...jsonBody(), timeoutMs: 12000 });
+      const books = Array.isArray(data.books) ? data.books : [];
+      renderShelf(books);
+      setStatus(`${books.length} 本书已就绪`, 'active');
+      toast(books.length ? `书架已同步，共 ${books.length} 本` : '书架为空');
+      return state.shelfBooks;
+    } catch (error) {
+      state.shelfLoaded = false;
+      state.shelfBooks = [];
+      renderShelfList();
+      setStatus('书架需要授权', 'warn');
+      toast(error.message, true);
+      return [];
+    } finally {
+      state.shelfRequest = null;
+    }
+  })();
+  return state.shelfRequest;
 }
 
 function safeReaderHtml(source) {
@@ -992,7 +1034,11 @@ function bindEvents() {
   $('open-help').addEventListener('click', showHelp);
   $('close-shelf').addEventListener('click', closeShelf);
   $('hide-panel').addEventListener('click', () => window.wefish.hide());
-  $('sync-button').addEventListener('click', loadShelf);
+  $('sync-button').addEventListener('click', () => loadShelf({ force: true }));
+  $('shelf-search').addEventListener('input', (event) => {
+    state.shelfQuery = event.target.value;
+    renderShelfList();
+  });
   $('insights-button').addEventListener('click', showInsights);
   $('manual-button').addEventListener('click', showManualAuth);
   $('qr-button').addEventListener('click', showQR);
@@ -1091,7 +1137,9 @@ async function boot() {
   $('duration').textContent = formatDuration(state.elapsed);
   try {
     state.baseUrl = await waitForBridge();
-    await loadState({ openShelfOnSuccess: true });
+    // Keep startup responsive: shelf sync is user initiated, so a slow network
+    // or a locked credential store cannot hold the first screen behind it.
+    await loadState({ openShelfOnSuccess: false });
   } catch (error) {
     setStatus('本地服务未启动', 'warn');
     toast(error.message, true);
@@ -1149,6 +1197,29 @@ if (window.location.hash === '#self-test') {
       }
       setTrayWidth(original.mode, original.chars);
       return snapshots;
+    },
+    checkShelfSearch() {
+      const original = {
+        books: state.shelfBooks,
+        query: state.shelfQuery,
+        loaded: state.shelfLoaded,
+        input: $('shelf-search').value,
+      };
+      state.shelfBooks = [
+        normalizeBook({ bookId: 'wf-001', title: '山谷来信', author: '合成作者' }),
+        normalizeBook({ bookId: 'wf-002', title: '海边札记', author: '另一位作者' }),
+      ];
+      state.shelfLoaded = true;
+      state.shelfQuery = '山谷';
+      $('shelf-search').value = state.shelfQuery;
+      renderShelfList();
+      const matched = $('shelf-list').querySelectorAll('.shelf-item').length;
+      state.shelfBooks = original.books;
+      state.shelfQuery = original.query;
+      state.shelfLoaded = original.loaded;
+      $('shelf-search').value = original.input;
+      renderShelfList();
+      return { matched, total: 2 };
     },
   };
 }
