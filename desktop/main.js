@@ -151,6 +151,7 @@ function updateMiniSurface(value) {
     widthChars: Math.max(12, Math.min(120, Math.round(Number(payload.widthChars) || 28))),
     lineProgress: String(payload.lineProgress || ''),
     percent: Number(payload.percent || 0),
+    ringPng: String(payload.ringPng || ''),
     showLineProgress: payload.showLineProgress !== false,
     showPercent: payload.showPercent !== false,
   };
@@ -173,22 +174,40 @@ function setOfficeTitleMode(enabled) {
 
 function progressRingImage(value, visible = true) {
   const percent = Math.max(0, Math.min(100, Number(value) || 0));
-  const radius = 8;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - percent / 100);
+  const center = 14;
+  const radius = 10.5;
+  const angle = (-90 + (percent / 100) * 360) * Math.PI / 180;
+  const endX = center + radius * Math.cos(angle);
+  const endY = center + radius * Math.sin(angle);
+  const largeArc = percent > 50 ? 1 : 0;
+  const arc = percent <= 0
+    ? ''
+    : percent >= 99.9
+      ? `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="#B8F27C" stroke-width="3.6"/>`
+      : `<path d="M ${center} ${center - radius} A ${radius} ${radius} 0 ${largeArc} 1 ${endX.toFixed(3)} ${endY.toFixed(3)}" fill="none" stroke="#B8F27C" stroke-width="3.6" stroke-linecap="round"/>`;
   const svg = visible
-    ? `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
-        <circle cx="11" cy="11" r="${radius}" fill="none" stroke="#59645F" stroke-width="2.2"/>
-        <circle cx="11" cy="11" r="${radius}" fill="none" stroke="#B8F27C" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 11 11)"/>
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+        <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="#59645F" stroke-width="3.6"/>
+        ${arc}
+        <text x="${center}" y="${center + 2.5}" text-anchor="middle" fill="#B8F27C" font-family="-apple-system, sans-serif" font-size="7" font-weight="700">${Math.round(percent)}</text>
       </svg>`
     : '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><path fill="none" d="M0 0h1v1H0z"/></svg>';
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+  const image = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+  if (typeof image.setTemplateImage === 'function') image.setTemplateImage(false);
+  return image;
 }
 
 function updateProgressTray() {
   if (!progressTray || progressTray.isDestroyed()) return;
-  progressTray.setImage(progressRingImage(miniSnapshot.percent, miniSnapshot.showPercent !== false));
-  progressTrayHasRing = miniSnapshot.showPercent !== false;
+  let image = null;
+  if (miniSnapshot.showPercent !== false && miniSnapshot.ringPng) {
+    image = nativeImage.createFromDataURL(miniSnapshot.ringPng);
+  }
+  if (!image || image.isEmpty()) {
+    image = progressRingImage(miniSnapshot.percent, miniSnapshot.showPercent !== false);
+  }
+  progressTray.setImage(image);
+  progressTrayHasRing = miniSnapshot.showPercent !== false && !image.isEmpty();
   progressTray.setToolTip(
     miniSnapshot.showPercent === false
       ? '阅读进度已隐藏'

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('wefish', {
         paragraphRange: String(value.paragraphRange || value.range || '0-0'),
         lineProgress: String(value.lineProgress || ''),
         percent: Number(value.percent || 0),
+        ringPng: String(value.ringPng || ''),
         showLineProgress: value.showLineProgress !== false,
         showPercent: value.showPercent !== false,
       });

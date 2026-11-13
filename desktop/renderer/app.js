@@ -438,6 +438,36 @@ function updateProgressDisplay(progress = state.bookProgress) {
   if (percentToggle) percentToggle.checked = state.showPercent;
 }
 
+function trayRingPng(progress) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 56;
+  canvas.height = 56;
+  const context = canvas.getContext('2d');
+  if (!context) return '';
+  const value = Math.max(0, Math.min(100, Number(progress) || 0));
+  const center = 28;
+  const radius = 21;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.lineWidth = 7;
+  context.lineCap = 'round';
+  context.strokeStyle = '#59645F';
+  context.beginPath();
+  context.arc(center, center, radius, 0, Math.PI * 2);
+  context.stroke();
+  if (value > 0) {
+    context.strokeStyle = '#B8F27C';
+    context.beginPath();
+    context.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * value / 100);
+    context.stroke();
+  }
+  context.fillStyle = '#B8F27C';
+  context.font = '700 15px -apple-system, BlinkMacSystemFont, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(String(Math.round(value)), center, center + 1);
+  return canvas.toDataURL('image/png');
+}
+
 function setProgressDisplay(kind, enabled, notify = false) {
   if (kind === 'lines') state.showLineProgress = Boolean(enabled);
   if (kind === 'percent') state.showPercent = Boolean(enabled);
@@ -469,6 +499,7 @@ function setTrayLine(text) {
       paragraphRange: annotation.paragraphRange,
       lineProgress: `${lineProgress.current} / ${lineProgress.total} 行`,
       percent: position.progress,
+      ringPng: trayRingPng(position.progress),
       showLineProgress: state.showLineProgress,
       showPercent: state.showPercent,
     });
