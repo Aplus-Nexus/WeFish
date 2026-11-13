@@ -397,14 +397,27 @@ function currentAnnotationContext(kind = 'line') {
   };
 }
 
+function chapterLineProgress() {
+  const width = trayLineWidth();
+  let before = 0;
+  let total = 0;
+  state.pages.forEach((page, index) => {
+    const count = Math.max(1, WeFishPagination.splitLines(String(page.text || ''), width).length);
+    total += count;
+    if (index < state.pageIndex) before += count;
+  });
+  const currentPageTotal = Math.max(1, state.lines.length);
+  const current = Math.min(total || currentPageTotal, before + Math.min(currentPageTotal, Math.max(1, state.lineIndex + 1)));
+  return { current: Math.max(1, current), total: Math.max(1, total || currentPageTotal) };
+}
+
 function updateProgressDisplay(progress = state.bookProgress) {
   const lineCount = $('progress-line-count');
   const percent = $('progress-percent');
   const ring = $('progress-ring-value');
-  const lineTotal = Math.max(1, state.lines.length);
-  const lineCurrent = Math.min(lineTotal, Math.max(1, state.lineIndex + 1));
+  const lineProgress = chapterLineProgress();
   if (lineCount) {
-    lineCount.textContent = `${lineCurrent} / ${lineTotal} 行`;
+    lineCount.textContent = `${lineProgress.current} / ${lineProgress.total} 行`;
     lineCount.hidden = !state.showLineProgress;
   }
   if (percent) {
@@ -441,6 +454,7 @@ function setTrayLine(text) {
     const rawText = String(text || '阅读器').replace(/\s+/g, ' ').trim() || '阅读器';
     const annotation = currentAnnotationContext();
     const position = readerPosition();
+    const lineProgress = chapterLineProgress();
     window.wefish.setLine({
       text: formatTrayLine(rawText),
       rawText,
@@ -453,7 +467,7 @@ function setTrayLine(text) {
       chapterName: state.chapters[state.chapterIndex]?.title || '',
       range: annotation.range,
       paragraphRange: annotation.paragraphRange,
-      lineProgress: `${Math.min(state.lines.length, state.lineIndex + 1)} / ${Math.max(1, state.lines.length)} 行`,
+      lineProgress: `${lineProgress.current} / ${lineProgress.total} 行`,
       percent: position.progress,
       showLineProgress: state.showLineProgress,
       showPercent: state.showPercent,
@@ -1456,6 +1470,7 @@ if (window.location.hash === '#self-test') {
         reading: state.reading,
         status: $('status-text').textContent,
         line: state.lines[state.lineIndex] || '',
+        lineProgress: $('progress-line-count')?.textContent || '',
         membership: state.membership,
       };
     },

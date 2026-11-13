@@ -624,6 +624,9 @@ async function assertMockRenderer() {
   if (!Array.isArray(snapshot.preloadedPages) || snapshot.preloadedPages.length < 2) {
     throw new Error('renderer did not preload the next pages');
   }
+  if (!snapshot.lineProgress || snapshot.lineProgress === '1 / 1 行' || !snapshot.lineProgress.includes('/')) {
+    throw new Error(`renderer line progress is page-local: ${snapshot.lineProgress}`);
+  }
   const next = await panel.webContents.executeJavaScript('window.__wefishTest.nextPage()', true);
   if (next.pageIndex !== Math.min(snapshot.pageCount - 1, snapshot.pageIndex + 1)) throw new Error('renderer next-page action failed');
   const line = await panel.webContents.executeJavaScript('window.__wefishTest.nextLine()', true);
@@ -632,7 +635,7 @@ async function assertMockRenderer() {
   if (jumped.chapterIndex !== 1 || jumped.pageIndex < 1) throw new Error(`renderer position jump failed: ${JSON.stringify(jumped)}`);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (!trayLineText) throw new Error('tray line IPC did not receive text');
-  if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('%')) throw new Error('tray progress was not placed at the right side');
+  if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('/') || !trayProgressTitle.includes('%')) throw new Error('tray progress was not placed at the right side');
   const requiredMenuShortcuts = [
     ['显示 / 隐藏阅读舱', SHORTCUTS.togglePanel],
     ['同步书架', SHORTCUTS.sync],
