@@ -42,6 +42,7 @@ let compactMode = isWindows;
 let compactMenuItem = null;
 let quitInProgress = false;
 let trayLineText = '';
+let trayProgressTitle = '';
 let panelPlaced = false;
 let rendererReady = Promise.resolve();
 let miniSurfaceReady = Promise.resolve();
@@ -163,7 +164,25 @@ function setOfficeTitleMode(enabled) {
   panel?.setTitle(officeTitleMode ? '工作文档' : '阅读器');
   tray?.setToolTip(officeTitleMode ? '工作文档' : '阅读器');
   if (officeTitleMenuItem) officeTitleMenuItem.checked = officeTitleMode;
-  if (!officeTitleMode && !isWindows) setTrayLine(trayLineText);
+  if (!officeTitleMode && !isWindows) renderTrayTitle();
+}
+
+function progressRingGlyph(value) {
+  const percent = Math.max(0, Math.min(100, Number(value) || 0));
+  if (percent >= 99.5) return '●';
+  if (percent >= 75) return '◕';
+  if (percent >= 50) return '◑';
+  if (percent >= 25) return '◔';
+  return '○';
+}
+
+function renderTrayTitle() {
+  if (!tray || officeTitleMode) return;
+  const title = `${trayLineText}${trayProgressTitle}`.trim();
+  if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
+    tray.setTitle(title);
+  }
+  tray.setToolTip(process.platform === 'darwin' ? (title || '阅读器') : '阅读器');
 }
 
 function setTrayLine(value) {
@@ -175,6 +194,15 @@ function setTrayLine(value) {
     .replace(/^ +| +$/g, '')
     .slice(0, 160);
   if (value && typeof value === 'object') {
+    const progressParts = [];
+    if (payload.showLineProgress !== false && payload.lineProgress) {
+      progressParts.push(String(payload.lineProgress).replace(/\s+/g, ' ').trim());
+    }
+    if (payload.showPercent !== false && Number.isFinite(Number(payload.percent))) {
+      const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+      progressParts.push(`${Math.round(percent)}% ${progressRingGlyph(percent)}`);
+    }
+    trayProgressTitle = progressParts.length ? `  ·  ${progressParts.join('  ·  ')}` : '';
     currentContext = {
       ...currentContext,
       line: String(payload.rawText || payload.text || '').trim(),
@@ -188,11 +216,7 @@ function setTrayLine(value) {
     };
   }
   updateMiniSurface({ ...payload, text: String(payload.text || '') });
-  if (!tray || officeTitleMode) return;
-  if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
-    tray.setTitle(trayLineText);
-  }
-  tray.setToolTip(process.platform === 'darwin' ? (trayLineText || '阅读器') : '阅读器');
+  renderTrayTitle();
 }
 
 function setCompactMode(enabled) {
@@ -608,6 +632,7 @@ async function assertMockRenderer() {
   if (jumped.chapterIndex !== 1 || jumped.pageIndex < 1) throw new Error(`renderer position jump failed: ${JSON.stringify(jumped)}`);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (!trayLineText) throw new Error('tray line IPC did not receive text');
+  if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('%')) throw new Error('tray progress was not placed at the right side');
   const requiredMenuShortcuts = [
     ['显示 / 隐藏阅读舱', SHORTCUTS.togglePanel],
     ['同步书架', SHORTCUTS.sync],
