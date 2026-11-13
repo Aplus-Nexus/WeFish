@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeFish 行阅读器</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <main class="sidepanel">
+    <header><div><span class="eyebrow">WEFISH / EDGE SIDEBAR</span><h1>行阅读器</h1></div><span class="status-dot" id="status-dot"></span></header>
+    <p class="book" id="book">等待 WeFish</p>
+    <section class="reader-card">
+      <div class="line" id="side-line">请先启动 WeFish 桌面端</div>
+      <div class="progress-row">
+        <span id="side-progress">—</span>
+        <div class="ring-wrap" id="ring-wrap">
+          <svg class="ring" viewBox="0 0 52 52" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <circle class="ring-track" cx="26" cy="26" r="21"></circle>
+            <circle class="ring-value" id="ring-value" cx="26" cy="26" r="21"></circle>
+          </svg>
+          <strong id="side-percent">0%</strong>
+        </div>
+      </div>
+    </section>
+    <div class="controls"><button data-action="line-previous">← 上一行</button><button data-action="line-toggle">Ⅱ 暂停 / 启动</button><button data-action="line-next">下一行 →</button></div>
+    <p class="hint">快捷键：Alt+Shift+↑ / ↓ 切换行，Alt+Shift+Space 暂停或启动。</p>
+  </main>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

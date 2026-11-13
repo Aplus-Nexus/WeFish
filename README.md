@@ -23,6 +23,8 @@ WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书
 - **阅读数据**：同步微信读书全平台本周、本月阅读时长、活跃天数、笔记、摘录、书友想法与会员权益摘要。
 - **当前内容操作**：托盘右键菜单支持复制当前行/段、划线当前行/段；“写想法”会打开小型多行输入框，Enter 换行，Ctrl+Enter 发送。
 - **进度显示**：阅读器显示 `x / xx 行`、百分比和 0°–360° 圆环；行数与百分比可分别隐藏，Windows 阅读小窗也会同步显示。
+- **真实进度环**：进度环使用 SVG 圆弧按真实比例绘制，当前进度为 25% 时覆盖约四分之一圆周；macOS 菜单栏显示动态圆环图标。
+- **Edge 联动**：附带 Edge Manifest V3 扩展，可把当前行放进 Edge 侧栏、扩展面板或当前网页浮层，并控制上一行、下一行和暂停/启动。
 - **低干扰窗口**：阅读舱默认隐藏，菜单栏/托盘图标、系统快捷键和右键菜单都能控制它。
 - **安全授权**：Cookie 和 API Key 只留在本地服务与 macOS Keychain / Windows Credential Manager，不进入浏览器页面。
 
@@ -43,6 +45,8 @@ WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书
 - [GitHub Releases](https://github.com/Aplus-Nexus/WeFish/releases)
 - [WeFish 项目介绍页](https://aplus-nexus.github.io/WeFish/)
 - [三套 Logo 方案预览](docs/brand/index.html)
+
+Edge 扩展位于 [`integrations/edge/`](integrations/edge/)，安装步骤和地址栏限制说明见其中的 [`README.md`](integrations/edge/README.md)。Edge 原生地址栏属于浏览器保护区域，扩展不能直接注入自定义 DOM；WeFish 使用官方侧栏 API 和网页浮层完成浏览器联动。
 
 当前仓库保留三套 Logo 方向：01「潮汐标」、02「书页标」、03「胶囊字标」。1.0 默认使用 01，欢迎从[预览页](docs/brand/index.html)选择最终品牌方案。
 

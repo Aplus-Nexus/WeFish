@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeFish</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="popup">
+    <div class="eyebrow">WEFISH / EDGE</div>
+    <div class="line" id="popup-line">连接 WeFish 中…</div>
+    <div class="meta"><span id="popup-progress">—</span><span id="popup-percent">—</span></div>
+    <div class="actions">
+      <button data-action="line-previous">上一行</button>
+      <button data-action="line-toggle">暂停 / 启动</button>
+      <button data-action="line-next">下一行</button>
+    </div>
+    <button class="primary" id="open-sidepanel">打开 Edge 侧栏</button>
+    <button class="secondary" id="toggle-overlay">在当前网页显示浮层</button>
+    <p class="hint" id="popup-status">需要先启动 WeFish 桌面端。</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

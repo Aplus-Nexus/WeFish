@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "WeFish · 行阅读器",
+  "version": "1.0.5",
+  "description": "把 WeFish 当前行带到 Edge 侧栏、弹出面板或网页浮层。",
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "scripting",
+    "sidePanel",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:27183/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "WeFish 行阅读器",
+    "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "commands": {
+    "next-line": {
+      "suggested_key": {
+        "default": "Alt+Shift+Down",
+        "mac": "MacCtrl+Shift+Down"
+      },
+      "description": "WeFish 下一行"
+    },
+    "previous-line": {
+      "suggested_key": {
+        "default": "Alt+Shift+Up",
+        "mac": "MacCtrl+Shift+Up"
+      },
+      "description": "WeFish 上一行"
+    },
+    "toggle-reading": {
+      "suggested_key": {
+        "default": "Alt+Shift+Space",
+        "mac": "MacCtrl+Shift+Space"
+      },
+      "description": "WeFish 暂停或启动逐行阅读"
+    }
+  }
+}

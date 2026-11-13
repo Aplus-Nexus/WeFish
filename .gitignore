@@ -9,6 +9,7 @@ dist/
 desktop/node_modules/
 desktop/release/
 desktop/*.log
+WeFish-Edge-Extension-*.zip
 *.egg-info/
 .idea/
 .vscode/

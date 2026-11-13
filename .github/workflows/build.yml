@@ -9,6 +9,29 @@ permissions:
   contents: write
 
 jobs:
+  edge-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Edge extension
+        run: |
+          node --check integrations/edge/background.js
+          node --check integrations/edge/popup.js
+          node --check integrations/edge/sidepanel.js
+          node --check integrations/edge/overlay.js
+          python -c "import json; json.load(open('integrations/edge/manifest.json'))"
+      - name: Package Edge extension
+        run: zip -r "WeFish-Edge-Extension-${GITHUB_REF_NAME}.zip" integrations/edge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WeFish-edge-extension
+          path: WeFish-Edge-Extension-*.zip
+      - name: Publish Edge extension asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: WeFish-Edge-Extension-*.zip
+          generate_release_notes: true
   package:
     strategy:
       matrix:

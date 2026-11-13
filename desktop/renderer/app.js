@@ -1455,6 +1455,10 @@ async function boot() {
 if (window.location.hash === '#self-test') {
   window.__wefishTest = {
     async openMock() {
+      // The mock self-test must be independent of a user's persisted display
+      // preferences from a previous local run.
+      state.showLineProgress = true;
+      state.showPercent = true;
       await loadBook({ bookId: 'wf-001', title: '山谷来信', author: '合成作者', progress: 12 });
       return {
         pageCount: state.pages.length,
@@ -1471,6 +1475,7 @@ if (window.location.hash === '#self-test') {
         status: $('status-text').textContent,
         line: state.lines[state.lineIndex] || '',
         lineProgress: $('progress-line-count')?.textContent || '',
+        ringDashoffset: $('progress-ring-value')?.style.strokeDashoffset || '',
         membership: state.membership,
       };
     },

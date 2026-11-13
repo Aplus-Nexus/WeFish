@@ -11,6 +11,13 @@
     <span class="mini-mark" aria-hidden="true"></span>
     <span class="mini-line" id="mini-line"></span>
     <span class="mini-progress" id="mini-progress"></span>
+    <span class="mini-ring-wrap" id="mini-ring-wrap" aria-label="阅读进度">
+      <svg class="mini-ring" viewBox="0 0 28 28" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <circle class="mini-ring-track" cx="14" cy="14" r="10"></circle>
+        <circle class="mini-ring-value" id="mini-ring-value" cx="14" cy="14" r="10"></circle>
+      </svg>
+      <strong id="mini-ring-percent">0%</strong>
+    </span>
   </div>
   <script src="./mini.js"></script>
 </body>

@@ -32,6 +32,8 @@ let panel = null;
 let miniSurface = null;
 let thoughtWindow = null;
 let tray = null;
+let progressTray = null;
+let progressTrayHasRing = false;
 let trayMenu = null;
 let bridge = null;
 let bridgeUrl = '';
@@ -43,6 +45,8 @@ let compactMenuItem = null;
 let quitInProgress = false;
 let trayLineText = '';
 let trayProgressTitle = '';
+const INTEGRATION_PORT = Math.max(1024, Number(process.env.WEFISH_INTEGRATION_PORT) || 27183);
+let integrationServer = null;
 let panelPlaced = false;
 let rendererReady = Promise.resolve();
 let miniSurfaceReady = Promise.resolve();
@@ -167,13 +171,29 @@ function setOfficeTitleMode(enabled) {
   if (!officeTitleMode && !isWindows) renderTrayTitle();
 }
 
-function progressRingGlyph(value) {
+function progressRingImage(value, visible = true) {
   const percent = Math.max(0, Math.min(100, Number(value) || 0));
-  if (percent >= 99.5) return '●';
-  if (percent >= 75) return '◕';
-  if (percent >= 50) return '◑';
-  if (percent >= 25) return '◔';
-  return '○';
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - percent / 100);
+  const svg = visible
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+        <circle cx="11" cy="11" r="${radius}" fill="none" stroke="#59645F" stroke-width="2.2"/>
+        <circle cx="11" cy="11" r="${radius}" fill="none" stroke="#B8F27C" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 11 11)"/>
+      </svg>`
+    : '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><path fill="none" d="M0 0h1v1H0z"/></svg>';
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+}
+
+function updateProgressTray() {
+  if (!progressTray || progressTray.isDestroyed()) return;
+  progressTray.setImage(progressRingImage(miniSnapshot.percent, miniSnapshot.showPercent !== false));
+  progressTrayHasRing = miniSnapshot.showPercent !== false;
+  progressTray.setToolTip(
+    miniSnapshot.showPercent === false
+      ? '阅读进度已隐藏'
+      : `${miniSnapshot.lineProgress || '阅读进度'} · ${Math.round(Number(miniSnapshot.percent) || 0)}%`,
+  );
 }
 
 function renderTrayTitle() {
@@ -200,7 +220,7 @@ function setTrayLine(value) {
     }
     if (payload.showPercent !== false && Number.isFinite(Number(payload.percent))) {
       const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
-      progressParts.push(`${Math.round(percent)}% ${progressRingGlyph(percent)}`);
+      progressParts.push(`${Math.round(percent)}%`);
     }
     trayProgressTitle = progressParts.length ? `  ·  ${progressParts.join('  ·  ')}` : '';
     currentContext = {
@@ -216,6 +236,7 @@ function setTrayLine(value) {
     };
   }
   updateMiniSurface({ ...payload, text: String(payload.text || '') });
+  updateProgressTray();
   renderTrayTitle();
 }
 
@@ -402,6 +423,96 @@ function createTray() {
   compactMenuItem.checked = compactMode;
   trayMenu = menu;
   tray.setContextMenu(menu);
+}
+
+function createProgressTray() {
+  // Electron exposes the macOS status item image separately from its title.
+  // A second status item keeps the real ring graphical and lets it sit at the
+  // right edge of the WeFish status component instead of using a text glyph.
+  if (process.platform !== 'darwin') return;
+  progressTray = new Tray(progressRingImage(0));
+  progressTray.setToolTip('阅读进度');
+  progressTray.on('click', togglePanel);
+  if (trayMenu) progressTray.setContextMenu(trayMenu);
+}
+
+function integrationPayload() {
+  return {
+    ok: true,
+    app: 'WeFish',
+    version: app.getVersion(),
+    text: trayLineText,
+    rawText: currentContext.line || trayLineText,
+    paragraph: currentContext.paragraph || '',
+    bookTitle: currentContext.bookTitle || '',
+    chapterName: currentContext.chapterName || '',
+    lineProgress: miniSnapshot.lineProgress || '',
+    percent: Number(miniSnapshot.percent || 0),
+    showLineProgress: miniSnapshot.showLineProgress !== false,
+    showPercent: miniSnapshot.showPercent !== false,
+    connected: Boolean(bridgeUrl),
+    updatedAt: Date.now(),
+  };
+}
+
+function integrationHeaders(response, contentType = 'application/json') {
+  response.setHeader('Content-Type', contentType);
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Cache-Control', 'no-store');
+}
+
+function integrationJson(response, status, payload) {
+  const body = Buffer.from(JSON.stringify(payload));
+  integrationHeaders(response);
+  response.writeHead(status);
+  response.end(body);
+}
+
+function startIntegrationServer() {
+  integrationServer = http.createServer((request, response) => {
+    const route = new URL(request.url || '/', `http://127.0.0.1:${INTEGRATION_PORT}`).pathname;
+    if (request.method === 'OPTIONS') {
+      integrationHeaders(response);
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (request.method === 'GET' && route === '/api/reader-state') {
+      integrationJson(response, 200, integrationPayload());
+      return;
+    }
+    if (request.method === 'GET' && route === '/api/health') {
+      integrationJson(response, 200, { ok: true, app: 'WeFish', version: app.getVersion() });
+      return;
+    }
+    if (request.method === 'POST' && route === '/api/reader-action') {
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => { body += chunk; });
+      request.on('end', () => {
+        let payload = {};
+        try { payload = body ? JSON.parse(body) : {}; } catch (_) { payload = {}; }
+        const allowed = new Set(['line-previous', 'line-next', 'line-toggle', 'page-previous', 'page-next', 'toggle-panel']);
+        const action = String(payload.action || '');
+        if (!allowed.has(action)) {
+          integrationJson(response, 400, { ok: false, error: '不支持的阅读操作' });
+          return;
+        }
+        if (action === 'toggle-panel') togglePanel();
+        else dispatchCommand(action);
+        integrationJson(response, 200, { ok: true, action });
+      });
+      return;
+    }
+    integrationJson(response, 404, { ok: false, error: '未知接口' });
+  });
+  integrationServer.on('error', (error) => {
+    integrationServer = null;
+    if (process.env.WEFISH_DEBUG) console.error(`Edge integration unavailable: ${error.message}`);
+  });
+  integrationServer.listen(INTEGRATION_PORT, '127.0.0.1');
 }
 
 function bridgeCommand() {
@@ -617,6 +728,7 @@ async function assertMockRenderer() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!snapshot || snapshot.pageCount < 2) throw new Error(`renderer pagination did not produce multiple pages: ${JSON.stringify(snapshot)}`);
+  if (!snapshot.ringDashoffset || Number(snapshot.ringDashoffset) <= 0) throw new Error('renderer progress ring did not draw a partial arc');
   if (snapshot.overflow !== 'hidden') throw new Error(`renderer scroll is enabled: ${snapshot.overflow}`);
   if (snapshot.resumeOffset < 40 || snapshot.lineIndex < 1) {
     throw new Error(`renderer did not restore the remote in-page position: ${JSON.stringify(snapshot)}`);
@@ -636,6 +748,25 @@ async function assertMockRenderer() {
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (!trayLineText) throw new Error('tray line IPC did not receive text');
   if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('/') || !trayProgressTitle.includes('%')) throw new Error('tray progress was not placed at the right side');
+  if (process.platform === 'darwin' && (!progressTray || !progressTrayHasRing)) {
+    throw new Error('macOS progress tray did not receive a graphical ring');
+  }
+  const integration = await new Promise((resolve, reject) => {
+    const request = http.get(`http://127.0.0.1:${INTEGRATION_PORT}/api/reader-state`, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { body += chunk; });
+      response.on('end', () => {
+        try { resolve({ status: response.statusCode, payload: JSON.parse(body) }); }
+        catch (error) { reject(error); }
+      });
+    });
+    request.setTimeout(2000, () => request.destroy(new Error('Edge integration self-test timed out')));
+    request.on('error', reject);
+  });
+  if (integration.status !== 200 || integration.payload?.rawText === undefined || integration.payload?.lineProgress === undefined) {
+    throw new Error('Edge integration state endpoint is incomplete');
+  }
   const requiredMenuShortcuts = [
     ['显示 / 隐藏阅读舱', SHORTCUTS.togglePanel],
     ['同步书架', SHORTCUTS.sync],
@@ -730,6 +861,8 @@ if (hasInstanceLock) {
     createThoughtWindow();
     createWindowsReadingSurface();
     createTray();
+    createProgressTray();
+    startIntegrationServer();
     ipcMain.handle('bridge-url', () => bridgeUrl);
     ipcMain.on('line-ticker', (_event, value) => setTrayLine(value));
     ipcMain.on('current-context', (_event, value) => {
@@ -796,4 +929,6 @@ app.on('before-quit', (event) => {
   stopping = true;
   globalShortcut.unregisterAll();
   if (bridge && !bridge.killed) bridge.kill();
+  if (integrationServer && integrationServer.listening) integrationServer.close();
+  if (progressTray && !progressTray.isDestroyed()) progressTray.destroy();
 });
