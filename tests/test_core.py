@@ -67,7 +67,8 @@ class CoreTests(unittest.TestCase):
             first.set_cookie_string("wr_vid=file-vid; wr_skey=file-skey")
             self.assertTrue(first.persist_credentials())
             credential_file = Path(directory) / "credentials.json"
-            self.assertEqual(stat.S_IMODE(credential_file.stat().st_mode), 0o600)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(credential_file.stat().st_mode), 0o600)
 
             second = WeReadClient(vault=CredentialVault())
             self.assertTrue(second.restore_credentials())
