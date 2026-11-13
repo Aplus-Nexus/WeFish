@@ -753,7 +753,7 @@ async function assertMockRenderer() {
   if (!snapshot || snapshot.pageCount < 2) throw new Error(`renderer pagination did not produce multiple pages: ${JSON.stringify(snapshot)}`);
   if (!snapshot.ringDashoffset || Number(snapshot.ringDashoffset) <= 0) throw new Error('renderer progress ring did not draw a partial arc');
   if (snapshot.overflow !== 'hidden') throw new Error(`renderer scroll is enabled: ${snapshot.overflow}`);
-  if (snapshot.resumeOffset < 40 || snapshot.lineIndex < 1) {
+  if (snapshot.resumeOffset < 40 || !snapshot.lineProgress || snapshot.lineProgress.startsWith('1 /')) {
     throw new Error(`renderer did not restore the remote in-page position: ${JSON.stringify(snapshot)}`);
   }
   if (!Array.isArray(snapshot.preloadedPages) || snapshot.preloadedPages.length < 2) {
@@ -883,8 +883,11 @@ if (hasInstanceLock) {
     createPanel();
     createThoughtWindow();
     createWindowsReadingSurface();
-    createTray();
     createProgressTray();
+    // macOS inserts a later status item on the left. Create the progress item
+    // first so the reading title remains left and the ring stays far right.
+    createTray();
+    if (progressTray && trayMenu) progressTray.setContextMenu(trayMenu);
     startIntegrationServer();
     ipcMain.handle('bridge-url', () => bridgeUrl);
     ipcMain.on('line-ticker', (_event, value) => setTrayLine(value));

@@ -1,6 +1,6 @@
 {
   "name": "wefish-desktop",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "author": "WeFish contributors",
   "description": "Menu-bar reading capsule for WeFish",
   "main": "main.js",
