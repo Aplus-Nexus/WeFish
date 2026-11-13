@@ -26,7 +26,7 @@ WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书
 - **真实进度环**：进度环使用 SVG 圆弧按真实比例绘制，当前进度为 25% 时覆盖约四分之一圆周；macOS 菜单栏显示动态圆环图标。
 - **Edge 联动**：附带 Edge Manifest V3 扩展，可把当前行放进 Edge 侧栏、扩展面板或当前网页浮层，并控制上一行、下一行和暂停/启动。
 - **低干扰窗口**：阅读舱默认隐藏，菜单栏/托盘图标、系统快捷键和右键菜单都能控制它。
-- **安全授权**：Cookie 和 API Key 只留在本地服务与 macOS Keychain / Windows Credential Manager，不进入浏览器页面。
+- **安全授权**：Cookie 和 API Key 只留在本地服务；Windows 使用 Credential Manager，macOS 发行版使用应用目录下权限为 `0600` 的本地会话文件，避免未签名服务副本反复触发 Keychain 授权窗口。凭据不进入浏览器页面。
 
 ### 快捷键
 

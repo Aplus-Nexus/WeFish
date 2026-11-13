@@ -68,6 +68,14 @@ class CredentialVault:
     ACCOUNT = "session"
 
     def __init__(self, backend=None):
+        self.file_path = None
+        self.file_only = str(os.environ.get("WEFISH_CREDENTIAL_STORE") or "").strip().lower() == "file"
+        configured_path = str(os.environ.get("WEFISH_CREDENTIAL_FILE") or "").strip()
+        if self.file_only and configured_path:
+            self.file_path = Path(configured_path).expanduser()
+        if self.file_only:
+            self.backend = None
+            return
         if backend is not None:
             self.backend = backend
             return
@@ -78,6 +86,15 @@ class CredentialVault:
             self.backend = None
 
     def load(self) -> Dict[str, Any]:
+        if self.file_only:
+            if self.file_path is None:
+                return {}
+            try:
+                raw = self.file_path.read_text(encoding="utf-8")
+                data = json.loads(raw) if raw else {}
+                return data if isinstance(data, dict) else {}
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                return {}
         if self.backend is None:
             return {}
         try:
@@ -88,6 +105,33 @@ class CredentialVault:
             return {}
 
     def save(self, data: Dict[str, Any]) -> bool:
+        if self.file_only:
+            if self.file_path is None:
+                return False
+            temporary = self.file_path.with_name(f".{self.file_path.name}.tmp")
+            try:
+                self.file_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.chmod(self.file_path.parent, 0o700)
+                except OSError:
+                    pass
+                temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                try:
+                    os.chmod(temporary, 0o600)
+                except OSError:
+                    pass
+                os.replace(temporary, self.file_path)
+                try:
+                    os.chmod(self.file_path, 0o600)
+                except OSError:
+                    pass
+                return True
+            except OSError:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return False
         if self.backend is None:
             return False
         try:

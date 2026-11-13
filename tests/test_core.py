@@ -1,8 +1,11 @@
 import json
+import os
+import stat
 import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from urllib.request import Request, build_opener
 
 from wefish_core import AuthError, CredentialVault, LocalCache, WeReadClient, WeFishError, apply_environment_credentials, content_params, decode_content_shards, extract_mp_body, extract_reader_state, read_report_params
@@ -53,6 +56,23 @@ class CoreTests(unittest.TestCase):
         }))
         self.assertEqual(client.session.api_key, "wrk-env-key")
         self.assertTrue(any(cookie.name == "wr_skey" and cookie.value == "env-skey" for cookie in client.session.cookies))
+
+    def test_file_vault_round_trip_uses_private_permissions(self):
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "WEFISH_CREDENTIAL_STORE": "file",
+            "WEFISH_CREDENTIAL_FILE": str(Path(directory) / "credentials.json"),
+        }, clear=False):
+            first = WeReadClient(vault=CredentialVault())
+            first.session.api_key = "file-key"
+            first.set_cookie_string("wr_vid=file-vid; wr_skey=file-skey")
+            self.assertTrue(first.persist_credentials())
+            credential_file = Path(directory) / "credentials.json"
+            self.assertEqual(stat.S_IMODE(credential_file.stat().st_mode), 0o600)
+
+            second = WeReadClient(vault=CredentialVault())
+            self.assertTrue(second.restore_credentials())
+            self.assertEqual(second.session.api_key, "file-key")
+            self.assertTrue(any(cookie.name == "wr_skey" and cookie.value == "file-skey" for cookie in second.session.cookies))
     def test_shelf_progress_annotations_and_reading(self):
         c = self.client()
         shelf = c.shelf(); self.assertEqual(shelf["books"][0]["bookId"], "wf-001")

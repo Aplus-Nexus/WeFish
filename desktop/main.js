@@ -575,7 +575,15 @@ function startBridge() {
     const command = bridgeCommand();
     const args = [...command.args, '--port', '0'];
     if (mockMode) args.push('--mock');
-    bridge = spawn(command.command, args, { cwd: path.join(__dirname, '..'), env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const bridgeEnv = { ...process.env };
+    if (app.isPackaged && process.platform === 'darwin') {
+      // The unsigned PyInstaller sidecar has no stable macOS code identity,
+      // so Keychain keeps asking for access on every copied service binary.
+      // Keep the session in the app's private, 0600 file store instead.
+      bridgeEnv.WEFISH_CREDENTIAL_STORE = 'file';
+      bridgeEnv.WEFISH_CREDENTIAL_FILE = path.join(app.getPath('userData'), 'credentials.json');
+    }
+    bridge = spawn(command.command, args, { cwd: path.join(__dirname, '..'), env: bridgeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const onData = (chunk) => {
       output += chunk.toString();

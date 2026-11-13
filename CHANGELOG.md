@@ -1,7 +1,13 @@
 # Changelog
 
+## 1.0.6 · 2026-11-13
+
+- 修复 macOS 启动时反复弹出 `WeFishService` Keychain 授权窗口的问题
+- macOS 服务改用应用私有的 `0600` 会话文件，登录后不再重复请求 Keychain 密码
+
 ## 1.0.5 · 2026-11-13
 
+- macOS 发行版停止在启动时读取 Keychain，改用应用私有的 `0600` 会话文件，避免 `WeFishService` 反复触发授权窗口
 - 进度环改为真实 SVG 圆环，按阅读百分比绘制实际覆盖角度
 - Windows 阅读小窗和 Edge 侧栏使用同一套真实圆环；macOS 菜单栏增加动态进度图标
 - 增加 Edge Manifest V3 联动扩展，支持侧栏、弹出面板和网页浮层
