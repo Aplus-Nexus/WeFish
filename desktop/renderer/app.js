@@ -440,15 +440,15 @@ function updateProgressDisplay(progress = state.bookProgress) {
 
 function trayRingPng(progress) {
   const canvas = document.createElement('canvas');
-  canvas.width = 56;
-  canvas.height = 56;
+  canvas.width = 22;
+  canvas.height = 22;
   const context = canvas.getContext('2d');
   if (!context) return '';
   const value = Math.max(0, Math.min(100, Number(progress) || 0));
-  const center = 28;
-  const radius = 21;
+  const center = 11;
+  const radius = 8;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.lineWidth = 7;
+  context.lineWidth = 3;
   context.lineCap = 'round';
   context.strokeStyle = '#59645F';
   context.beginPath();
@@ -461,7 +461,7 @@ function trayRingPng(progress) {
     context.stroke();
   }
   context.fillStyle = '#B8F27C';
-  context.font = '700 15px -apple-system, BlinkMacSystemFont, sans-serif';
+  context.font = '700 7px -apple-system, BlinkMacSystemFont, sans-serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillText(String(Math.round(value)), center, center + 1);
@@ -499,7 +499,7 @@ function setTrayLine(text) {
       paragraphRange: annotation.paragraphRange,
       lineProgress: `${lineProgress.current} / ${lineProgress.total} 行`,
       percent: position.progress,
-      ringPng: trayRingPng(position.progress),
+      ringPng: state.showPercent ? trayRingPng(position.progress) : '',
       showLineProgress: state.showLineProgress,
       showPercent: state.showPercent,
     });

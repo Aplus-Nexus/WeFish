@@ -237,10 +237,6 @@ function setTrayLine(value) {
     if (payload.showLineProgress !== false && payload.lineProgress) {
       progressParts.push(String(payload.lineProgress).replace(/\s+/g, ' ').trim());
     }
-    if (payload.showPercent !== false && Number.isFinite(Number(payload.percent))) {
-      const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
-      progressParts.push(`${Math.round(percent)}%`);
-    }
     trayProgressTitle = progressParts.length ? `  ·  ${progressParts.join('  ·  ')}` : '';
     currentContext = {
       ...currentContext,
@@ -774,7 +770,7 @@ async function assertMockRenderer() {
   if (jumped.chapterIndex !== 1 || jumped.pageIndex < 1) throw new Error(`renderer position jump failed: ${JSON.stringify(jumped)}`);
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (!trayLineText) throw new Error('tray line IPC did not receive text');
-  if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('/') || !trayProgressTitle.includes('%')) throw new Error('tray progress was not placed at the right side');
+  if (!trayProgressTitle.includes('行') || !trayProgressTitle.includes('/') || trayProgressTitle.includes('%')) throw new Error('tray progress text duplicated the graphical percentage');
   if (process.platform === 'darwin' && (!progressTray || !progressTrayHasRing)) {
     throw new Error('macOS progress tray did not receive a graphical ring');
   }

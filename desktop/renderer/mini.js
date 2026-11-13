@@ -9,8 +9,7 @@ window.wefish.onMiniUpdate((value) => {
   line.textContent = text;
   const lineProgress = value?.showLineProgress === false ? '' : String(value?.lineProgress || '');
   const percentValue = Math.max(0, Math.min(100, Number(value?.percent || 0)));
-  const percent = value?.showPercent === false ? '' : `${Math.round(percentValue)}%`;
-  progress.textContent = [lineProgress, percent].filter(Boolean).join(' · ');
+  progress.textContent = lineProgress;
   const circumference = 2 * Math.PI * 10;
   if (ring) {
     ring.style.strokeDasharray = String(circumference);
