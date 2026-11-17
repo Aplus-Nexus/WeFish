@@ -1521,7 +1521,7 @@ function bindEvents() {
     if (key === 'ArrowRight') { event.preventDefault(); goNext(); }
     if (key === 'ArrowUp') { event.preventDefault(); nextLine(-1); }
     if (key === 'ArrowDown') { event.preventDefault(); nextLine(1); }
-    if (key === ' ') { event.preventDefault(); setLineAuto(!state.lineAuto); }
+    if (key.toLowerCase() === 'l') { event.preventDefault(); setLineAuto(!state.lineAuto); }
   });
   $('modal-backdrop').addEventListener('click', (event) => {
     if (event.target === $('modal-backdrop')) closeModal();

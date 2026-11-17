@@ -24,7 +24,7 @@ const SHORTCUTS = Object.freeze({
   chapterNext: 'CommandOrControl+Alt+Shift+Right',
   linePrevious: 'CommandOrControl+Alt+Up',
   lineNext: 'CommandOrControl+Alt+Down',
-  lineToggle: 'CommandOrControl+Alt+Space',
+  lineToggle: 'CommandOrControl+Alt+L',
   help: 'CommandOrControl+Alt+H',
   compact: 'CommandOrControl+Alt+P',
   officeTitle: 'CommandOrControl+Alt+T',
@@ -482,7 +482,11 @@ function createWindowsReadingSurface() {
 function createTray() {
   tray = new Tray(trayImage());
   tray.setToolTip('阅读器');
-  tray.on('click', togglePanel);
+  if (isWindows) {
+    // Windows exposes the same independent settings menu from a left click.
+    // The reader surface opens only from its explicit menu item or shortcut.
+    tray.on('click', () => tray?.popUpContextMenu(trayMenu || undefined));
+  }
   const menu = Menu.buildFromTemplate([
     { label: '显示 / 隐藏阅读舱', accelerator: SHORTCUTS.togglePanel, click: togglePanel },
     { id: 'reader-content-visibility', label: readerVisibilityLabel(), accelerator: SHORTCUTS.readerVisibility, click: toggleReaderContentVisible },
@@ -559,7 +563,6 @@ function createProgressTray() {
   if (process.platform !== 'darwin') return;
   progressTray = new Tray(progressRingImage(0));
   progressTray.setToolTip('阅读进度');
-  progressTray.on('click', togglePanel);
   if (trayMenu) progressTray.setContextMenu(trayMenu);
 }
 
@@ -975,6 +978,12 @@ async function assertMockRenderer() {
   for (const [label, accelerator] of requiredMenuShortcuts) {
     const item = trayMenu?.items.find((candidate) => candidate.label === label);
     if (!item || item.accelerator !== accelerator) throw new Error(`tray shortcut is missing: ${label}`);
+  }
+  if (SHORTCUTS.lineToggle !== 'CommandOrControl+Alt+L') {
+    throw new Error(`auto-line shortcut unexpectedly changed: ${SHORTCUTS.lineToggle}`);
+  }
+  if (process.platform === 'darwin' && (tray.listenerCount('click') !== 0 || progressTray?.listenerCount('click') !== 0)) {
+    throw new Error('menu-bar settings click is still coupled to the reader panel');
   }
   if (!panel.isMovable()) throw new Error('reader window is not movable');
   const themeMenuItem = trayMenu?.items.find((candidate) => candidate.id === 'theme-dark-mode');

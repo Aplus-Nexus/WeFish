@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WeFish · 行阅读器",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "把 WeFish 当前行带到 Edge 侧栏、弹出面板或网页浮层。",
   "permissions": [
     "activeTab",
@@ -41,8 +41,8 @@
     },
     "toggle-reading": {
       "suggested_key": {
-        "default": "Alt+Shift+Space",
-        "mac": "MacCtrl+Shift+Space"
+        "default": "Alt+Shift+L",
+        "mac": "MacCtrl+Shift+L"
       },
       "description": "WeFish 暂停或启动逐行阅读"
     }

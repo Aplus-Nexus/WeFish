@@ -39,7 +39,7 @@ WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书
 | 上一页 / 下一页 | `⌘ ⌥ ← / →` | `Ctrl Alt ← / →` |
 | 上一章 / 下一章 | `⌘ ⌥ ⇧ ← / →` | `Ctrl Alt Shift ← / →` |
 | 上一行 / 下一行 | `⌘ ⌥ ↑ / ↓` | `Ctrl Alt ↑ / ↓` |
-| 暂停 / 启动自动逐行 | `⌘ ⌥ Space` | `Ctrl Alt Space` |
+| 暂停 / 启动自动逐行 | `⌘ ⌥ L` | `Ctrl Alt L` |
 | 同步书架 | `⌘ ⌥ R` | `Ctrl Alt R` |
 | 切换小窗模式 | `⌘ ⌥ P` | `Ctrl Alt P` |
 
