@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('wefish', {
         ringPng: String(value.ringPng || ''),
         showLineProgress: value.showLineProgress !== false,
         showPercent: value.showPercent !== false,
+        themeMode: String(value.themeMode || 'dark'),
       });
       return;
     }
@@ -28,6 +29,7 @@ contextBridge.exposeInMainWorld('wefish', {
   },
   hide: () => ipcRenderer.send('hide-panel'),
   show: () => ipcRenderer.send('show-panel'),
+  setThemeMode: (mode) => ipcRenderer.send('theme-mode', String(mode || 'dark')),
   onCommand: (callback) => ipcRenderer.on('command', (_event, command) => callback(command)),
   sendCurrentContext: (value) => ipcRenderer.send('current-context', value || {}),
   onVisibility: (callback) => ipcRenderer.on('panel-visibility', (_event, visible) => callback(visible)),

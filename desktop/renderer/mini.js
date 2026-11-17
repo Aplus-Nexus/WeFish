@@ -5,6 +5,7 @@ const ring = document.getElementById('mini-ring-value');
 const ringPercent = document.getElementById('mini-ring-percent');
 
 window.wefish.onMiniUpdate((value) => {
+  document.documentElement.dataset.theme = value?.themeMode === 'light' ? 'light' : 'dark';
   const text = String(value?.text || '').replace(/[\t\n\r ]+/g, ' ').trim();
   line.textContent = text;
   const lineProgress = value?.showLineProgress === false ? '' : String(value?.lineProgress || '');

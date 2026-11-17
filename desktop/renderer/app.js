@@ -45,6 +45,7 @@ const state = {
   positionSyncQueued: false,
   showLineProgress: true,
   showPercent: true,
+  themeMode: 'dark',
   flushStarted: false,
   restoreTimer: null,
 };
@@ -68,6 +69,50 @@ function formatReadingTime(seconds) {
 function setStatus(message, kind = '') {
   $('status-text').textContent = message;
   $('status-dot').className = `status-dot ${kind}`.trim();
+}
+
+function updateReadingUi() {
+  const hasBook = Boolean(state.currentBook && state.chapters.length);
+  const reading = hasBook && state.reading;
+  const readingState = $('reading-state');
+  const readingLabel = $('reading-state-label');
+  if (readingState) readingState.classList.toggle('active', reading);
+  if (readingLabel) {
+    readingLabel.textContent = reading
+      ? (state.lineAuto ? '阅读中' : '手动阅读')
+      : (state.currentBook ? '等待正文' : '等待选书');
+  }
+  const previous = $('previous-button');
+  const next = $('next-button');
+  if (previous) previous.disabled = !hasBook;
+  if (next) next.disabled = !hasBook;
+  const lineToggle = $('line-toggle');
+  if (lineToggle) {
+    lineToggle.disabled = !hasBook;
+    lineToggle.classList.toggle('active', hasBook && state.lineAuto);
+    lineToggle.setAttribute('aria-pressed', String(hasBook && state.lineAuto));
+    const icon = lineToggle.querySelector('.line-toggle-icon');
+    const label = $('line-toggle-label');
+    if (icon) icon.textContent = hasBook && state.lineAuto ? 'Ⅱ' : '▶';
+    if (label) label.textContent = hasBook ? '自动逐行' : '等待选书';
+  }
+}
+
+function applyTheme(mode, notify = false) {
+  const nextMode = mode === 'light' ? 'light' : 'dark';
+  state.themeMode = nextMode;
+  document.documentElement.dataset.theme = nextMode;
+  const button = $('theme-toggle');
+  if (button) {
+    button.textContent = nextMode === 'dark' ? '日' : '夜';
+    button.title = nextMode === 'dark' ? '切换到白天模式' : '切换到黑夜模式';
+    button.setAttribute('aria-label', button.title);
+  }
+  try { localStorage.setItem('wefish.theme', nextMode); } catch (_) { /* private mode */ }
+  window.wefish?.setThemeMode?.(nextMode);
+  if (notify) {
+    toast(nextMode === 'dark' ? '已切换到黑夜模式' : '已切换到白天模式');
+  }
 }
 
 function toast(message, error = false) {
@@ -503,6 +548,7 @@ function setTrayLine(text) {
       ringPng: state.showPercent ? trayRingPng(position.progress) : '',
       showLineProgress: state.showLineProgress,
       showPercent: state.showPercent,
+      themeMode: state.themeMode,
     });
   }
 }
@@ -593,9 +639,7 @@ function updateLineDisplay() {
   state.lineIndex = Math.max(0, Math.min(state.lineIndex, Math.max(0, state.lines.length - 1)));
   const line = state.lines[state.lineIndex] || pageText || '阅读器';
   setTrayLine(line);
-  const button = $('line-toggle');
-  button.classList.toggle('active', state.lineAuto);
-  button.textContent = state.lineAuto ? '行▶' : '行Ⅱ';
+  updateReadingUi();
   updateReaderPosition();
   schedulePositionSync();
 }
@@ -611,9 +655,14 @@ async function runScheduledLineAdvance() {
   state.lineTimer = null;
   if (!state.lineAuto || !state.reading || !state.currentBook) return;
   const startedAt = Date.now();
+  let advanced = false;
   try {
-    await nextLine(1, true);
+    advanced = await nextLine(1);
   } finally {
+    if (!advanced && state.lineAuto && state.reading && state.currentBook) {
+      state.lineAuto = false;
+      updateReadingUi();
+    }
     if (state.lineAuto && state.reading && state.currentBook) {
       const elapsed = Date.now() - startedAt;
       resetLineTimer(Math.max(50, state.lineIntervalMs - elapsed));
@@ -637,6 +686,7 @@ function setLineAuto(enabled) {
   state.lineAuto = Boolean(enabled);
   resetLineTimer();
   updateLineDisplay();
+  updateReadingUi();
 }
 
 async function nextLine(delta = 1) {
@@ -793,6 +843,7 @@ async function loadChapter(index, resume = null) {
     showPage(state.pageIndex, { lineIndex: resumeLineIndex });
     updateReaderPosition();
     state.reading = true;
+    updateReadingUi();
     if (window.location.hash !== '#self-test') {
       rememberBook({ ...state.currentBook, progress: state.bookProgress, chapterUid: state.chapters[state.chapterIndex]?.chapterUid });
     }
@@ -801,6 +852,8 @@ async function loadChapter(index, resume = null) {
     return true;
   } catch (error) {
     state.reading = false;
+    resetLineTimer();
+    updateReadingUi();
     setStatus('正文暂时不可用', 'warn');
     $('reader-body').innerHTML = '<div class="empty-state"><div class="empty-glyph">!</div><h2>这章还没打开</h2><p></p></div>';
     $('reader-body p').textContent = error.message;
@@ -815,6 +868,9 @@ async function loadBook(rawBook) {
   closeShelf();
   if (window.location.hash !== '#self-test') rememberBook(book);
   state.currentBook = book;
+  state.reading = false;
+  resetLineTimer();
+  updateReadingUi();
   state.chapters = [];
   state.chapterIndex = -1;
   state.pages = [];
@@ -867,6 +923,8 @@ async function loadBook(rawBook) {
     await loadChapter(currentIndex >= 0 ? currentIndex : 0, resume);
   } catch (error) {
     state.reading = false;
+    resetLineTimer();
+    updateReadingUi();
     setStatus('正文需要 Web Reader Cookie', 'warn');
     toast(`${error.message}；请扫码后重试`, true);
     showQR();
@@ -1424,6 +1482,9 @@ function bindEvents() {
   $('open-shelf').addEventListener('click', openShelf);
   $('open-insights').addEventListener('click', showInsights);
   $('open-help').addEventListener('click', showHelp);
+  $('theme-toggle').addEventListener('click', () => {
+    applyTheme(state.themeMode === 'dark' ? 'light' : 'dark', true);
+  });
   $('close-shelf').addEventListener('click', closeShelf);
   $('hide-panel').addEventListener('click', () => window.wefish.hide());
   $('sync-button').addEventListener('click', () => loadShelf({ force: true }));
@@ -1453,12 +1514,6 @@ function bindEvents() {
   $('tray-width-mode').addEventListener('change', (event) => setTrayWidth(event.target.value, $('tray-width-number').value, true));
   $('tray-width-chars').addEventListener('input', (event) => setTrayWidth(state.trayWidthMode, event.target.value));
   $('tray-width-number').addEventListener('change', (event) => setTrayWidth(state.trayWidthMode, event.target.value, true));
-  $('toggle-reading').addEventListener('click', () => {
-    state.reading = !state.reading;
-    setLineAuto(state.reading);
-    $('toggle-reading em').textContent = state.reading ? '阅读中' : '已暂停';
-    setStatus(state.reading ? '正在阅读' : '阅读已暂停', state.reading ? 'active' : '');
-  });
   window.addEventListener('keydown', (event) => {
     if (!(event.metaKey || event.ctrlKey) || !event.altKey) return;
     const key = event.key;
@@ -1487,6 +1542,9 @@ function bindEvents() {
     if (action === 'thought-submit') submitThought(command.text);
     if (action === 'progress-lines:toggle') setProgressDisplay('lines', !state.showLineProgress, true);
     if (action === 'progress-percent:toggle') setProgressDisplay('percent', !state.showPercent, true);
+    if (action === 'theme:toggle') applyTheme(state.themeMode === 'dark' ? 'light' : 'dark', true);
+    if (action === 'theme:light') applyTheme('light', true);
+    if (action === 'theme:dark') applyTheme('dark', true);
     if (typeof action !== 'string') return;
     if (action.startsWith('line-interval:')) setLineInterval(action.split(':', 2)[1], true);
     if (action.startsWith('tray-width:')) {
@@ -1522,6 +1580,12 @@ function bindEvents() {
 
 async function boot() {
   bindEvents();
+  try {
+    applyTheme(localStorage.getItem('wefish.theme') || 'dark');
+  } catch (_) {
+    applyTheme('dark');
+  }
+  updateReadingUi();
   loadPendingReports();
   loadRecentBooks();
   renderShelfList();
@@ -1558,6 +1622,38 @@ async function boot() {
 
 if (window.location.hash === '#self-test') {
   window.__wefishTest = {
+    initialUi() {
+      const bodyRect = $('reader-body').getBoundingClientRect();
+      const actionsRect = document.querySelector('.empty-actions')?.getBoundingClientRect();
+      return {
+        readingLabel: $('reading-state-label')?.textContent || '',
+        readingActive: $('reading-state')?.classList.contains('active') || false,
+        actionsFit: Boolean(actionsRect && actionsRect.bottom <= bodyRect.bottom + 1),
+        lineControlsGrouped: $('line-toggle')?.closest('.line-control-group') === $('line-interval')?.closest('.line-control-group'),
+        previousDisabled: Boolean($('previous-button')?.disabled),
+        nextDisabled: Boolean($('next-button')?.disabled),
+        hasThemeToggle: Boolean($('theme-toggle')),
+      };
+    },
+    checkTheme() {
+      const original = state.themeMode;
+      applyTheme('light');
+      const light = {
+        mode: document.documentElement.dataset.theme,
+        surface: getComputedStyle(document.querySelector('.shell')).backgroundColor,
+      };
+      applyTheme('dark');
+      const dark = {
+        mode: document.documentElement.dataset.theme,
+        surface: getComputedStyle(document.querySelector('.shell')).backgroundColor,
+      };
+      applyTheme(original);
+      return {
+        light,
+        dark,
+        restored: document.documentElement.dataset.theme === original,
+      };
+    },
     async openMock() {
       // The mock self-test must be independent of a user's persisted display
       // preferences from a previous local run.
@@ -1576,6 +1672,9 @@ if (window.location.hash === '#self-test') {
         textLength: state.chapterTextLength,
         chapterCount: state.chapters.length,
         reading: state.reading,
+        readingLabel: $('reading-state-label')?.textContent || '',
+        lineControlsGrouped: $('line-toggle')?.closest('.line-control-group') === $('line-interval')?.closest('.line-control-group'),
+        previousDisabled: Boolean($('previous-button')?.disabled),
         status: $('status-text').textContent,
         line: state.lines[state.lineIndex] || '',
         lineProgress: $('progress-line-count')?.textContent || '',

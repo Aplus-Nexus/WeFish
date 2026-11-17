@@ -43,6 +43,8 @@ let officeTitleMode = false;
 let officeTitleMenuItem = null;
 let readerVisibilityMenuItem = null;
 let readerContentVisible = true;
+let themeDarkMenuItem = null;
+let themeMode = 'dark';
 let compactMode = isWindows;
 let compactMenuItem = null;
 let quitInProgress = false;
@@ -51,9 +53,11 @@ let trayProgressTitle = '';
 const INTEGRATION_PORT = Math.max(1024, Number(process.env.WEFISH_INTEGRATION_PORT) || 27183);
 let integrationServer = null;
 let panelPlaced = false;
+let panelPosition = null;
 let rendererReady = Promise.resolve();
 let miniSurfaceReady = Promise.resolve();
-let miniSnapshot = { text: '', rawText: '', widthMode: 'dynamic', widthChars: 28 };
+let miniSurfacePosition = null;
+let miniSnapshot = { text: '', rawText: '', widthMode: 'dynamic', widthChars: 28, themeMode: 'dark' };
 let currentContext = {
   line: '',
   paragraph: '',
@@ -81,7 +85,13 @@ function positionPanel(force = false) {
   const work = display.workArea;
   const width = 390;
   const height = !isWindows && compactMode ? 270 : 650;
-  panel.setBounds({ x: work.x + work.width - width - 14, y: work.y + 12, width, height }, false);
+  const x = Number.isFinite(panelPosition?.x)
+    ? Math.max(work.x, Math.min(Number(panelPosition.x), work.x + work.width - width))
+    : work.x + work.width - width - 14;
+  const y = Number.isFinite(panelPosition?.y)
+    ? Math.max(work.y, Math.min(Number(panelPosition.y), work.y + work.height - height))
+    : work.y + 12;
+  panel.setBounds({ x, y, width, height }, false);
   panelPlaced = true;
 }
 
@@ -132,6 +142,32 @@ function dispatchCommand(command) {
   else send();
 }
 
+function loadWindowPosition(name) {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), `${name}.json`), 'utf8'));
+    if (Number.isFinite(value?.x) && Number.isFinite(value?.y)) {
+      return { x: Math.round(value.x), y: Math.round(value.y) };
+    }
+  } catch (_) { /* first run or invalid saved position */ }
+  return null;
+}
+
+function saveWindowPosition(name, position) {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+  try {
+    fs.writeFileSync(
+      path.join(app.getPath('userData'), `${name}.json`),
+      JSON.stringify({ x: Math.round(position.x), y: Math.round(position.y) }),
+      { mode: 0o600 },
+    );
+  } catch (_) { /* position persistence is best effort */ }
+}
+
+function updateThemeMode(mode) {
+  themeMode = mode === 'light' ? 'light' : 'dark';
+  if (themeDarkMenuItem) themeDarkMenuItem.checked = themeMode === 'dark';
+}
+
 function miniSurfaceBounds(snapshot = miniSnapshot) {
   const display = screen.getPrimaryDisplay();
   const work = display.workArea;
@@ -145,6 +181,21 @@ function miniSurfaceBounds(snapshot = miniSnapshot) {
   const maxWidth = Math.max(180, work.width - 28);
   const width = Math.min(maxWidth, Math.max(180, 36 + chars * 16));
   const height = 68;
+  if (miniSurfacePosition) {
+    const targetDisplay = screen.getDisplayMatching({
+      x: miniSurfacePosition.x,
+      y: miniSurfacePosition.y,
+      width,
+      height,
+    });
+    const targetWork = targetDisplay.workArea;
+    return {
+      x: Math.max(targetWork.x, Math.min(miniSurfacePosition.x, targetWork.x + targetWork.width - width)),
+      y: Math.max(targetWork.y, Math.min(miniSurfacePosition.y, targetWork.y + targetWork.height - height)),
+      width,
+      height,
+    };
+  }
   return {
     x: work.x + work.width - width - 14,
     y: work.y + work.height - height - 12,
@@ -178,7 +229,9 @@ function updateMiniSurface(value) {
     ringPng: String(payload.ringPng || ''),
     showLineProgress: payload.showLineProgress !== false,
     showPercent: payload.showPercent !== false,
+    themeMode: payload.themeMode === 'light' ? 'light' : (payload.themeMode === 'dark' ? 'dark' : themeMode),
   };
+  updateThemeMode(miniSnapshot.themeMode);
   if (!isWindows || !miniSurface || miniSurface.isDestroyed()) return;
   miniSurfaceReady.then(() => {
     if (!miniSurface || miniSurface.isDestroyed()) return;
@@ -310,6 +363,8 @@ function createPanel() {
     maxHeight: 760,
     show: false,
     frame: false,
+    movable: true,
+    acceptFirstMouse: true,
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
@@ -326,6 +381,7 @@ function createPanel() {
       backgroundThrottling: false,
     },
   });
+  panelPosition = loadWindowPosition('panel-position');
   rendererReady = new Promise((resolve) => panel.webContents.once('did-finish-load', resolve));
   if (showOnStart) panel.webContents.once('did-finish-load', () => setPanelVisible(true));
   panel.loadFile(path.join(__dirname, 'renderer', 'index.html'), { hash: selfTestMode ? 'self-test' : '' });
@@ -334,6 +390,12 @@ function createPanel() {
     // the corner while the user works in another app. The full reader keeps
     // the convenient click-away dismissal behavior.
     if (panel && panel.isVisible() && !isWindows && !compactMode && !panel.webContents.isDevToolsOpened()) setPanelVisible(false);
+  });
+  panel.on('moved', () => {
+    if (!panel || panel.isDestroyed()) return;
+    const [x, y] = panel.getPosition();
+    panelPosition = { x, y };
+    saveWindowPosition('panel-position', panelPosition);
   });
   panel.on('closed', () => { panel = null; });
 }
@@ -391,8 +453,9 @@ function createWindowsReadingSurface() {
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
-    focusable: false,
+    movable: true,
+    focusable: true,
+    acceptFirstMouse: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
@@ -404,9 +467,15 @@ function createWindowsReadingSurface() {
       nodeIntegration: false,
     },
   });
-  miniSurface.setIgnoreMouseEvents(true, { forward: true });
+  miniSurfacePosition = loadWindowPosition('mini-surface-position');
   miniSurfaceReady = new Promise((resolve) => miniSurface.webContents.once('did-finish-load', resolve));
   miniSurface.loadFile(path.join(__dirname, 'renderer', 'mini.html'));
+  miniSurface.on('moved', () => {
+    if (!miniSurface || miniSurface.isDestroyed()) return;
+    const [x, y] = miniSurface.getPosition();
+    miniSurfacePosition = { x, y };
+    saveWindowPosition('mini-surface-position', miniSurfacePosition);
+  });
   miniSurface.on('closed', () => { miniSurface = null; });
 }
 
@@ -456,6 +525,11 @@ function createTray() {
     { label: '快捷键与使用说明', accelerator: SHORTCUTS.help, click: () => { setPanelVisible(true); dispatchCommand('help'); } },
     { label: '微信扫码', click: () => { setPanelVisible(true); dispatchCommand('qr'); } },
     { id: 'compact-mode', label: '小窗模式', accelerator: SHORTCUTS.compact, type: 'checkbox', click: (item) => setCompactMode(item.checked) },
+    { id: 'theme-dark-mode', label: '深色模式', type: 'checkbox', checked: themeMode === 'dark', click: (item) => {
+      const nextMode = item.checked ? 'dark' : 'light';
+      updateThemeMode(nextMode);
+      dispatchCommand(`theme:${nextMode}`);
+    } },
     { id: 'office-title-mode', label: '工作文档标题', accelerator: SHORTCUTS.officeTitle, type: 'checkbox', click: (item) => setOfficeTitleMode(item.checked) },
     { type: 'separator' },
     { label: '关于 / 许可证', click: () => dialog.showMessageBox(panel || undefined, {
@@ -468,9 +542,11 @@ function createTray() {
     { label: '退出阅读器', click: () => app.quit() },
   ]);
   compactMenuItem = menu.getMenuItemById('compact-mode');
+  themeDarkMenuItem = menu.getMenuItemById('theme-dark-mode');
   officeTitleMenuItem = menu.getMenuItemById('office-title-mode');
   readerVisibilityMenuItem = menu.getMenuItemById('reader-content-visibility');
   compactMenuItem.checked = compactMode;
+  updateThemeMode(themeMode);
   updateReaderVisibilityMenuItem();
   trayMenu = menu;
   tray.setContextMenu(menu);
@@ -501,6 +577,7 @@ function integrationPayload() {
     percent: Number(miniSnapshot.percent || 0),
     showLineProgress: miniSnapshot.showLineProgress !== false,
     showPercent: miniSnapshot.showPercent !== false,
+    themeMode,
     connected: Boolean(bridgeUrl),
     updatedAt: Date.now(),
   };
@@ -780,6 +857,35 @@ async function assertMockRenderer() {
     rendererReady,
     new Promise((_, reject) => setTimeout(() => reject(new Error('renderer did not load')), 8000)),
   ]);
+  const initialUi = await panel.webContents.executeJavaScript('window.__wefishTest.initialUi()', true);
+  if (
+    initialUi.readingLabel === '阅读中'
+    || initialUi.readingActive
+    || !initialUi.actionsFit
+    || !initialUi.lineControlsGrouped
+    || !initialUi.previousDisabled
+    || !initialUi.nextDisabled
+    || !initialUi.hasThemeToggle
+  ) {
+    throw new Error(`empty-reader UI is incomplete: ${JSON.stringify(initialUi)}`);
+  }
+  const themes = await panel.webContents.executeJavaScript('window.__wefishTest.checkTheme()', true);
+  if (
+    themes.light?.mode !== 'light'
+    || themes.dark?.mode !== 'dark'
+    || themes.light?.surface === themes.dark?.surface
+    || !themes.restored
+  ) {
+    throw new Error(`day/night theme switch failed: ${JSON.stringify(themes)}`);
+  }
+  const captureUi = async (name) => {
+    const outputDir = String(process.env.WEFISH_CAPTURE_DIR || '').trim();
+    if (!outputDir || !panel || panel.isDestroyed()) return;
+    fs.mkdirSync(outputDir, { recursive: true });
+    const image = await panel.webContents.capturePage();
+    fs.writeFileSync(path.join(outputDir, `${name}.png`), image.toPNG());
+  };
+  await captureUi('empty-reader');
   let snapshot = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const candidate = await panel.webContents.executeJavaScript(`window.__wefishTest ? window.__wefishTest.openMock() : null`, true);
@@ -799,6 +905,20 @@ async function assertMockRenderer() {
   if (!snapshot.lineProgress || snapshot.lineProgress === '1 / 1 行' || !snapshot.lineProgress.includes('/')) {
     throw new Error(`renderer line progress is page-local: ${snapshot.lineProgress}`);
   }
+  if (snapshot.readingLabel !== '阅读中' || snapshot.previousDisabled || !snapshot.lineControlsGrouped) {
+    throw new Error(`active-reader UI did not synchronize: ${JSON.stringify(snapshot)}`);
+  }
+  await captureUi('active-reader');
+  if (process.env.WEFISH_CAPTURE_DIR) {
+    await panel.webContents.executeJavaScript(`applyTheme('light')`, true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await captureUi('light-reader');
+    await panel.webContents.executeJavaScript(`applyTheme('dark')`, true);
+  }
+  panel.setSize(390, 270);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await captureUi('compact-reader');
+  panel.setSize(390, 650);
   const next = await panel.webContents.executeJavaScript('window.__wefishTest.nextPage()', true);
   if (next.pageIndex !== Math.min(snapshot.pageCount - 1, snapshot.pageIndex + 1)) throw new Error('renderer next-page action failed');
   const line = await panel.webContents.executeJavaScript('window.__wefishTest.nextLine()', true);
@@ -856,6 +976,15 @@ async function assertMockRenderer() {
     const item = trayMenu?.items.find((candidate) => candidate.label === label);
     if (!item || item.accelerator !== accelerator) throw new Error(`tray shortcut is missing: ${label}`);
   }
+  if (!panel.isMovable()) throw new Error('reader window is not movable');
+  const themeMenuItem = trayMenu?.items.find((candidate) => candidate.id === 'theme-dark-mode');
+  if (!themeMenuItem || themeMenuItem.type !== 'checkbox' || !themeMenuItem.checked) {
+    throw new Error('dark-mode tray control is missing');
+  }
+  updateThemeMode('light');
+  if (themeMenuItem.checked) throw new Error('dark-mode tray control did not update');
+  updateThemeMode('dark');
+  if (!themeMenuItem.checked) throw new Error('dark-mode tray control did not restore');
   const readerVisibilityItem = trayMenu?.items.find((candidate) => candidate.id === 'reader-content-visibility');
   if (!readerVisibilityItem || readerVisibilityItem.accelerator !== SHORTCUTS.readerVisibility || !readerVisibilityItem.label.startsWith('隐藏')) {
     throw new Error('reader visibility shortcut is missing from the tray menu');
@@ -875,8 +1004,11 @@ async function assertMockRenderer() {
   if (isWindows) {
     await miniSurfaceReady;
     if (!miniSurface || !miniSurface.isVisible()) throw new Error('Windows reading surface is not visible');
+    if (!miniSurface.isMovable()) throw new Error('Windows reading surface is not movable');
     const miniText = await miniSurface.webContents.executeJavaScript('document.querySelector("#mini-line").textContent', true);
     if (!miniText) throw new Error('Windows reading surface has no current line');
+    const miniTheme = await miniSurface.webContents.executeJavaScript('document.documentElement.dataset.theme', true);
+    if (miniTheme !== 'dark') throw new Error('Windows reading surface did not inherit the dark theme');
     setCompactMode(false);
     if (miniSurface.isVisible()) throw new Error('Windows reading surface did not hide');
     setCompactMode(true);
@@ -951,6 +1083,10 @@ if (hasInstanceLock) {
     startIntegrationServer();
     ipcMain.handle('bridge-url', () => bridgeUrl);
     ipcMain.on('line-ticker', (_event, value) => setTrayLine(value));
+    ipcMain.on('theme-mode', (_event, mode) => {
+      updateThemeMode(mode);
+      updateMiniSurface({ ...miniSnapshot, themeMode });
+    });
     ipcMain.on('current-context', (_event, value) => {
       if (!value || typeof value !== 'object') return;
       currentContext = { ...currentContext, ...value };

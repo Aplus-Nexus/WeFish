@@ -1,7 +1,21 @@
 :root {
+  --mini-bg: rgba(16, 20, 19, .94);
+  --mini-border: rgba(238, 231, 215, .17);
+  --mini-text: #eee7d7;
+  --mini-dim: rgba(238, 231, 215, .18);
+  --mini-accent: #b8f27c;
   color-scheme: dark;
   font-family: Georgia, "Songti SC", "Noto Serif CJK SC", serif;
   background: transparent;
+}
+
+:root[data-theme="light"] {
+  --mini-bg: rgba(255, 250, 240, .96);
+  --mini-border: rgba(26, 33, 31, .16);
+  --mini-text: #1a211f;
+  --mini-dim: rgba(26, 33, 31, .16);
+  --mini-accent: #669e30;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -13,12 +27,15 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   width: 100%;
   height: 100%;
   padding: 0 16px;
-  border: 1px solid rgba(238, 231, 215, .17);
+  border: 1px solid var(--mini-border);
   border-radius: 12px;
-  background: rgba(16, 20, 19, .94);
+  background: var(--mini-bg);
   box-shadow: 0 10px 28px rgba(0, 0, 0, .32);
-  color: #eee7d7;
+  color: var(--mini-text);
+  -webkit-app-region: drag;
+  cursor: grab;
 }
+.mini-surface:active { cursor: grabbing; }
 
 .mini-mark {
   flex: 0 0 auto;
@@ -26,7 +43,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   height: 7px;
   margin-right: 10px;
   border-radius: 50%;
-  background: #b8f27c;
+  background: var(--mini-accent);
   box-shadow: 0 0 0 4px rgba(184, 242, 124, .1);
 }
 
@@ -34,7 +51,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: #eee7d7;
+  color: var(--mini-text);
   font-size: 16px;
   line-height: 1.35;
   white-space: nowrap;
@@ -45,7 +62,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
 .mini-progress {
   flex: 0 0 auto;
   margin-left: 12px;
-  color: #b8f27c;
+  color: var(--mini-accent);
   font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
 }
@@ -69,13 +86,13 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   stroke-width: 3;
 }
 
-.mini-ring-track { stroke: rgba(238, 231, 215, .18); }
-.mini-ring-value { stroke: #b8f27c; stroke-linecap: round; transition: stroke-dashoffset .25s ease; }
+.mini-ring-track { stroke: var(--mini-dim); }
+.mini-ring-value { stroke: var(--mini-accent); stroke-linecap: round; transition: stroke-dashoffset .25s ease; }
 .mini-ring-wrap strong {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  color: #eee7d7;
+  color: var(--mini-text);
   font: 700 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
