@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from urllib.request import Request, build_opener
 
-from wefish_core import AuthError, CredentialVault, LocalCache, WeReadClient, WeFishError, apply_environment_credentials, content_params, decode_content_shards, extract_mp_body, extract_reader_state, read_report_params
+from wefish_core import AuthError, CredentialVault, LocalCache, WeReadClient, WeFishError, apply_environment_credentials, content_params, decode_content_shards, extract_mp_body, extract_reader_state, prepare_reader_source, read_report_params
 from mock_service import _encoded_shards, serve
 
 
@@ -87,7 +87,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("合成章节正文", c.fetch_chapter("wf-001", 1))
         self.assertEqual(c.read_stats("monthly")["readingTime"], 3600)
         self.assertEqual(c.notebooks()["totalNoteCount"], 2)
-        self.assertEqual(c.report_read({"bookId": "wf-001", "elapsed": 30})["succ"], 1)
+        self.assertEqual(c.report_read({"bookId": "wf-001", "chapterUid": 1, "elapsed": 30})["succ"], 1)
         self.assertTrue(c.renew())
         self.assertEqual(c.session.web_headers["x-wr-ticket"], "mock-ticket")
         self.assertEqual(c.session.web_headers["x-wrpa-0"], "mock-wrpa")
@@ -307,6 +307,37 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report["rt"], 30)
         self.assertEqual(report["co"], 42)
         self.assertEqual(report["sm"], "章节摘要")
+        enter = self.server.read_requests[-2]
+        for field in ("rt", "ts", "rn", "sg"):
+            self.assertNotIn(field, enter)
+
+    def test_review_uses_reader_payload_and_is_read_back_before_success(self):
+        c = self.client()
+        result = c.add_review({
+            "bookId": "wf-001",
+            "chapterUid": 1,
+            "bookVersion": 1001,
+            "range": "18-42",
+            "abstract": "当前正文",
+            "content": "测试想法",
+            "isPrivate": 0,
+        })
+        self.assertTrue(result["reviewId"])
+        self.assertTrue(result["verified"])
+        saved = self.server.mock_reviews[-1]
+        self.assertEqual(saved["bookVersion"], 1001)
+        self.assertEqual(saved["isPrivate"], 0)
+        self.assertEqual(saved["range"], "18-42")
+        self.assertEqual(saved["abstract"], "当前正文")
+
+    def test_reader_source_offsets_match_cloud_coordinate_space(self):
+        source = '<html><head><style>p{color:red}</style></head><body><p>第一段</p><p>目标句子</p></body></html>'
+        canonical = source.replace('<style>p{color:red}</style>', '')
+        annotated = prepare_reader_source(source)
+        target = canonical.index('目标句子')
+        self.assertNotIn('<style>', annotated)
+        self.assertIn('data-wf-offset', annotated)
+        self.assertIn(f'data-wf-offset="{target}"', annotated)
 
     def test_reader_report_does_not_invent_a_token_when_reader_state_has_none(self):
         params = read_report_params(

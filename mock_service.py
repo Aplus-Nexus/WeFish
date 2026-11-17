@@ -9,7 +9,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-BOOK = {"bookId": "wf-001", "title": "山谷来信", "author": "合成作者", "progress": 12}
+BOOK = {"bookId": "wf-001", "title": "山谷来信", "author": "合成作者", "progress": 12, "version": 1001}
 MP_BOOK = {"bookId": "MP_WXS_001", "title": "合成公众号", "author": "公众号", "progress": 7}
 CHAPTERS = [{"chapterUid": i, "chapterIdx": i, "title": f"第{i}章", "wordCount": 2600, "tar": "https://weread.qq.com/mock-assets/chapter.tar"} for i in range(1, 4)]
 MP_ARTICLE = {
@@ -131,10 +131,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.mock_bookmarks = getattr(self.server, "mock_bookmarks", []) + [dict(body)]
                 return self._json(200, {"succ": 1, "bookmarkId": "mock-bookmark-1"})
             if api == "/book/readreviews": return self._json(200, {"reviews": [{"range": "0-4", "pageReviews": [{"review": {"content": "合成书友想法", "chapterUid": 1, "range": "0-4"}}]}]})
-            if api == "/review/list/mine": return self._json(200, {"reviews": [{"review": {"content": "合成我的想法", "chapterUid": 1, "reviewId": "mine-1"}}]})
+            if api == "/review/list/mine":
+                saved = [
+                    {"reviewId": row.get("reviewId"), "review": dict(row)}
+                    for row in getattr(self.server, "mock_reviews", [])
+                ]
+                return self._json(200, {"reviews": [{"review": {"content": "合成我的想法", "chapterUid": 1, "reviewId": "mine-1"}}] + saved})
             if api == "/review/add":
-                self.server.mock_reviews = getattr(self.server, "mock_reviews", []) + [dict(body)]
-                return self._json(200, {"succ": 1, "reviewId": "mock-review-1"})
+                review_id = f"mock-review-{len(getattr(self.server, 'mock_reviews', [])) + 1}"
+                review = {key: value for key, value in body.items() if key not in {"api_name", "skill_version"}}
+                review.update({"reviewId": review_id, "createTime": 1700000000})
+                self.server.mock_reviews = getattr(self.server, "mock_reviews", []) + [review]
+                return self._json(200, {"succ": 1, "reviewId": review_id, "verified": False})
             if api == "/review/list": return self._json(200, {"reviews": [{"content": "合成书评"}]})
             if api == "/readdata/detail": return self._json(200, {"readingTime": 3600, "readingDays": 4, "mode": body.get("mode", "monthly")})
             if api == "/user/notebooks": return self._json(200, {"totalBookCount": 1, "totalNoteCount": 2, "books": [{"bookId": BOOK["bookId"], "noteCount": 2, "reviewCount": 1, "bookmarkCount": 1}]})
@@ -242,5 +250,7 @@ def serve(port=0):
     server.apikey_unauthorized = False
     server.latest_progress = None
     server.reading_time = 0
+    server.mock_reviews = []
+    server.mock_bookmarks = []
     return server
 

@@ -14,7 +14,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from wefish_core import AuthError, WeReadClient, WeFishError, apply_environment_credentials
+from wefish_core import AuthError, WeReadClient, WeFishError, apply_environment_credentials, prepare_reader_source
 
 # The bundled macOS keyring backend can take several seconds on its first
 # access while the login keychain wakes up. Treat that delay as loading rather
@@ -277,9 +277,11 @@ class Handler(BaseHTTPRequestHandler):
                         } for index, row in enumerate(articles)]
                         return self._json(200, {"bookId": book_id, "chapters": chapters, "entitlement": {}})
                     chapters = self.bridge.client.chapter_catalog(book_id)
+                    catalog_state = getattr(self.bridge.client, "_catalog_state", {}).get(book_id, {})
                     return self._json(200, {
                         "bookId": book_id,
                         "chapters": chapters,
+                        "bookVersion": catalog_state.get("synckey", ""),
                         "entitlement": self.bridge.client.entitlement_summary(chapters),
                     })
 
@@ -312,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
                     if self.bridge.client.is_mp_book(book_id):
                         source = self.bridge.client.mp_content(str(chapter_uid), inline_images=True)
                     else:
-                        source = self.bridge.client.fetch_chapter(book_id, int(chapter_uid))
+                        source = prepare_reader_source(self.bridge.client.fetch_chapter(book_id, int(chapter_uid)))
                     return self._html(200, source)
 
                 if route == "/api/reader/report":

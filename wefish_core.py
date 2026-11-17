@@ -161,6 +161,7 @@ class WeReadClient:
         self._reset_qr_session()
         self._catalog_state = {}
         self._reader_state = {}
+        self._read_sessions = set()
 
     @staticmethod
     def _set_cookie_jar_value(jar: CookieJar, name: str, value: str):
@@ -1028,7 +1029,13 @@ class WeReadClient:
                 "content": str(content),
                 "reviewId": str(review.get("reviewId") or row.get("reviewId") or ""),
                 "chapterUid": review.get("chapterUid", row.get("chapterUid")),
+                "chapterIdx": review.get("chapterIdx", row.get("chapterIdx")),
                 "chapterName": str(review.get("chapterName") or row.get("chapterName") or ""),
+                "chapterTitle": str(review.get("chapterTitle") or row.get("chapterTitle") or ""),
+                "range": str(review.get("range") or row.get("range") or ""),
+                "abstract": str(review.get("abstract") or row.get("abstract") or ""),
+                "bookVersion": review.get("bookVersion", row.get("bookVersion")),
+                "isPrivate": review.get("isPrivate", row.get("isPrivate")),
                 "createTime": review.get("createTime", row.get("createTime", 0)),
             })
         return normalized
@@ -1105,11 +1112,96 @@ class WeReadClient:
         content = str(value.get("content") or "").strip()
         if not book_id or not content:
             raise WeFishError("想法需要书籍和内容")
-        params = {"bookId": book_id, "content": content, "type": int(value.get("type", 1) or 1)}
-        for key in ("chapterUid", "range", "abstract", "star"):
-            if value.get(key) not in (None, ""):
-                params[key] = int(value[key]) if key in {"chapterUid", "star"} else value[key]
-        return self.gateway("/review/add", **params)
+        chapter_uid = value.get("chapterUid")
+        if chapter_uid in (None, ""):
+            raise WeFishError("想法缺少章节位置")
+        chapter_uid = int(chapter_uid)
+        book_version = value.get("bookVersion")
+        try:
+            book_version = int(book_version) if book_version not in (None, "") else None
+        except (TypeError, ValueError):
+            book_version = None
+        if book_version is None:
+            catalog = getattr(self, "_catalog_state", {}).get(book_id, {})
+            book_version = catalog.get("synckey")
+            try:
+                book_version = int(book_version) if book_version not in (None, "") else None
+            except (TypeError, ValueError):
+                book_version = None
+        if book_version is None:
+            state = getattr(self, "_reader_state", {}).get((book_id, chapter_uid))
+            if not state:
+                state = self.reader_state(book_id, chapter_uid)
+            reader = (state.get("state") or {}).get("reader") or {}
+            progress = reader.get("progress") if isinstance(reader.get("progress"), dict) else {}
+            book_progress = progress.get("book") if isinstance(progress.get("book"), dict) else {}
+            book_info = reader.get("bookInfo") if isinstance(reader.get("bookInfo"), dict) else {}
+            book_version = book_progress.get("bookVersion") or book_info.get("version")
+        try:
+            book_version = int(book_version) if book_version not in (None, "") else None
+        except (TypeError, ValueError):
+            book_version = None
+        if book_version is None:
+            raise WeFishError("微信读书没有返回 bookVersion，无法安全发布想法")
+
+        # These are the fields sent by WeRead's own reader. bookVersion binds
+        # the annotation to the exact chapter revision shown on mobile.
+        params = {
+            "type": int(value.get("type", 1) or 1),
+            "bookId": book_id,
+            "chapterUid": chapter_uid,
+            "range": str(value.get("range") or "0-0"),
+            "content": content,
+            "abstract": str(value.get("abstract") or "")[:120],
+            "isPrivate": int(value.get("isPrivate", 0) or 0),
+            "bookVersion": book_version,
+        }
+        result = self.gateway("/review/add", **params)
+        review_id = self._review_id_from_response(result)
+        if not review_id:
+            raise WeFishError("微信读书没有返回想法 ID，发布未确认")
+
+        # Verify the new ID through the account's own review list before the
+        # desktop reports success. This catches HTTP-success responses that
+        # silently discard an annotation.
+        for attempt in range(5):
+            mine = self.my_reviews(book_id, count=100)
+            rows = mine.get("reviews", []) if isinstance(mine, dict) else []
+            if any(
+                str(row.get("reviewId") or (row.get("review") or {}).get("reviewId") or "") == review_id
+                for row in rows if isinstance(row, dict)
+            ):
+                response = dict(result)
+                response["reviewId"] = review_id
+                response["verified"] = True
+                return response
+            if attempt < 4:
+                time.sleep(0.25 * (attempt + 1))
+        raise WeFishError(f"想法已提交但云端回读未确认（{review_id[:32]}）")
+
+    @staticmethod
+    def _review_id_from_response(result: Any) -> str:
+        if not isinstance(result, dict):
+            return ""
+        candidates = [result.get("reviewId")]
+        for key in ("data", "result", "review"):
+            nested = result.get(key)
+            if isinstance(nested, dict):
+                candidates.append(nested.get("reviewId"))
+        return next((str(value) for value in candidates if value), "")
+
+    @staticmethod
+    def _read_response_accepted(result: Any) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if result.get("synckey") not in (None, ""):
+            return True
+        for key in ("succ", "success", "ok"):
+            value = result.get(key)
+            if value is True or str(value).lower() in {"1", "true"}:
+                return True
+        error = result.get("errCode", result.get("errcode", result.get("errorCode")))
+        return error in (0, "0")
 
     def report_read(self, payload: Dict[str, Any]):
         """Report a signed Web Reader reading position/session."""
@@ -1117,12 +1209,13 @@ class WeReadClient:
         payload = dict(payload or {})
         book_id = str(payload.get("bookId") or payload.get("book_id") or "")
         chapter_uid = payload.get("chapterUid", payload.get("chapter_uid"))
+        state = None
         if book_id and chapter_uid is not None:
             chapter_uid = int(chapter_uid)
             state = getattr(self, "_reader_state", {}).get((book_id, chapter_uid))
             if not state:
                 state = self.reader_state(book_id, chapter_uid)
-            payload = read_report_params(
+            report_options = dict(
                 book_id=book_id,
                 chapter_uid=chapter_uid,
                 chapter_idx=payload.get("chapterIdx", payload.get("ci", 0)),
@@ -1134,12 +1227,52 @@ class WeReadClient:
                 token=state.get("token", ""),
                 elapsed_seconds=payload.get("elapsed", payload.get("rt", 0)),
             )
-        raw = self._request("POST", self._url(f"{self.WEB}/web/book/read"), payload=payload,
-                            headers={"Content-Type": "application/json;charset=UTF-8", "Origin": self.WEB, "Referer": f"{self.WEB}/web/reader/"}, web_session=True)
+        if state is None:
+            raise WeFishError("阅读上报缺少 bookId 或 chapterUid")
+
+        session_key = (book_id, chapter_uid)
+        enter_response = None
+        if session_key not in self._read_sessions:
+            enter_response = self._post_read_payload(read_report_params(**report_options, enter=True))
+            if not self._read_response_accepted(enter_response):
+                raise WeFishError(f"进入阅读会话时云端拒绝：{self._safe_response_message(enter_response)}")
+
+        timed_response = self._post_read_payload(read_report_params(**report_options))
+        if not self._read_response_accepted(timed_response):
+            raise WeFishError(f"阅读进度未被云端接受：{self._safe_response_message(timed_response)}")
+        self._read_sessions.add(session_key)
+        response = dict(timed_response)
+        if enter_response is not None:
+            response["sessionEntered"] = True
+        return response
+
+    def _post_read_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raw = self._request(
+            "POST",
+            self._url(f"{self.WEB}/web/book/read"),
+            payload=payload,
+            headers={
+                "Content-Type": "application/json;charset=UTF-8",
+                "Origin": self.WEB,
+                "Referer": f"{self.WEB}/web/reader/",
+            },
+            web_session=True,
+        )
         try:
-            return json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
-            return {"raw": "ok"}
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise WeFishError("阅读上报接口返回了无效响应") from exc
+        if not isinstance(value, dict):
+            raise WeFishError("阅读上报接口返回了无效响应")
+        return value
+
+    @staticmethod
+    def _safe_response_message(result: Any) -> str:
+        if not isinstance(result, dict):
+            return "未知响应"
+        message = result.get("errMsg") or result.get("errmsg") or result.get("message") or result.get("msg")
+        code = result.get("errCode", result.get("errcode", result.get("errorCode", result.get("code"))))
+        return f"{message or '操作未生效'}{f' ({code})' if code not in (None, '') else ''}"[:180]
 
     def annotations(self, book_id: str, chapter_uid: int):
         bookmark_data = self.bookmarks(book_id)
@@ -1334,10 +1467,38 @@ def content_params(book_id: str, chapter_uid: int, psvts: str, style: bool = Fal
     return params
 
 
+def _utf16_length(value: str) -> int:
+    """Match JavaScript's UTF-16 string offsets used by WeRead."""
+    return len(value.encode("utf-16-le")) // 2
+
+
+def prepare_reader_source(source: str) -> str:
+    """Remove non-content CSS and annotate source coordinates.
+
+    WeRead reports ``chapterOffset`` and annotation ranges against the
+    chapter XHTML after its top-level style block has been removed. Keeping
+    that coordinate system is essential for opening the same line on mobile.
+    """
+    canonical = re.sub(r"<style\b[^>]*>.*?</style\s*>", "", str(source or ""), flags=re.I | re.S)
+    pattern = re.compile(r"<(p|h[1-6]|blockquote|li|pre|td|th)(\s[^<>]*?)?>", re.I)
+
+    def annotate(match: re.Match[str]) -> str:
+        opening = match.group(0)
+        if re.search(r"\bdata-wf-offset\s*=", opening, re.I):
+            return opening
+        cursor = match.end()
+        while cursor < len(canonical) and canonical[cursor].isspace():
+            cursor += 1
+        offset = _utf16_length(canonical[:cursor])
+        return f"{opening[:-1]} data-wf-offset=\"{offset}\">"
+
+    return pattern.sub(annotate, canonical)
+
+
 def read_report_params(*, book_id: str, chapter_uid: int, chapter_idx: int = 0,
                        chapter_offset: int = 0, progress: Any = 0, summary: str = "",
                        psvts: str, pclts: str = "", token: str = "",
-                       elapsed_seconds: int = 0) -> Dict[str, Any]:
+                       elapsed_seconds: int = 0, enter: bool = False) -> Dict[str, Any]:
     now = int(time.time())
     ts = now * 1000 + random.randint(0, 999)
     rn = random.randint(0, 999)
@@ -1359,15 +1520,14 @@ def read_report_params(*, book_id: str, chapter_uid: int, chapter_idx: int = 0,
         "co": max(0, int(chapter_offset or 0)),
         "sm": str(summary or "")[:20],
         "pr": progress_value,
-        "rt": elapsed_value,
-        "ts": ts,
-        "rn": rn,
         "ct": now,
         "ps": str(psvts or ""),
         "pc": pc,
     }
-    if token:
-        params["sg"] = hashlib.sha256(f"{ts}{rn}{token}".encode()).hexdigest()
+    if not enter:
+        params.update({"rt": elapsed_value, "ts": ts, "rn": rn})
+        if token:
+            params["sg"] = hashlib.sha256(f"{ts}{rn}{token}".encode()).hexdigest()
     params["s"] = weread_sign(params)
     return params
 

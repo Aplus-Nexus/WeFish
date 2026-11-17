@@ -5,6 +5,7 @@ const state = {
   visible: true,
   currentBook: null,
   chapters: [],
+  bookVersion: '',
   chapterIndex: -1,
   pages: [],
   pageIndex: 0,
@@ -24,6 +25,7 @@ const state = {
   chapterSummary: '',
   bookProgress: 0,
   chapterTextLength: 0,
+  chapterSourceLength: 0,
   lines: [],
   lineIndex: 0,
   lineAuto: true,
@@ -365,15 +367,23 @@ function updateReaderHeader(chapter) {
 
 function readerPosition() {
   const page = state.pages[state.pageIndex] || { text: '', startOffset: 0, endOffset: 0 };
+  const source = currentSourceLinePosition();
   const lines = state.lines.length ? state.lines : [page.text || ''];
-  const lineFraction = lines.length > 1 ? state.lineIndex / Math.max(1, lines.length - 1) : 0;
-  const offset = Math.max(0, Math.min(state.chapterTextLength || page.endOffset || 0,
-    Math.floor(page.startOffset + (page.text || '').length * lineFraction)));
-  const summary = String(lines[Math.min(state.lineIndex, lines.length - 1)] || page.text || '').slice(0, 20);
-  const chapterCount = Math.max(state.chapters.length, 1);
-  const chapterFraction = state.chapterTextLength > 0 ? offset / state.chapterTextLength : 0;
-  const progress = ((state.chapterIndex + chapterFraction) / chapterCount) * 100;
-  return { offset, summary, progress: Math.max(0, Math.min(100, progress)) };
+  const summary = String(source?.summary || lines[Math.min(state.lineIndex, lines.length - 1)] || page.text || '').slice(0, 20);
+  const sourceLength = Math.max(1, Number(state.chapterSourceLength || page.sourceEnd || 1));
+  const offset = Math.max(0, Math.min(sourceLength, Number(source?.offset ?? page.sourceStart ?? 0) || 0));
+  const chapter = state.chapters[state.chapterIndex] || {};
+  const chapterNumber = Math.max(1, Number(chapter.chapterIdx || state.chapterIndex + 1) || 1);
+  const lastChapter = state.chapters[state.chapters.length - 1] || {};
+  const chapterCount = Math.max(chapterNumber, Number(lastChapter.chapterIdx || state.chapters.length) || 1);
+  const chapterFraction = offset / sourceLength;
+  const progress = ((chapterNumber - 1 + chapterFraction) / chapterCount) * 100;
+  return {
+    offset,
+    summary,
+    visibleOffset: Math.max(0, Number(page.startOffset || 0)),
+    progress: Math.max(0, Math.min(100, progress)),
+  };
 }
 
 function updateReaderPosition() {
@@ -403,36 +413,83 @@ function lineStartOffset() {
   return Math.max(0, Number(page.startOffset || 0) + (found >= 0 ? found : cursor));
 }
 
-function currentParagraphInfo() {
-  const page = state.pages[state.pageIndex] || { startOffset: 0, text: '' };
-  const pageText = currentPageText();
+function currentPageBlocks() {
   const root = $('reader-body').querySelector('.reader-page');
-  const blocks = root
-    ? [...root.querySelectorAll('h1,h2,h3,h4,p,blockquote,li')]
-      .map((node) => String(node.textContent || '').replace(/\s+/g, ' ').trim())
-      .filter(Boolean)
-    : [];
-  const lineRelative = Math.max(0, lineStartOffset() - Number(page.startOffset || 0));
+  if (!root) return [];
+  const pageText = currentPageText();
   let cursor = 0;
-  for (const text of blocks) {
-    const found = pageText.indexOf(text, cursor);
-    const start = found >= 0 ? found : cursor;
-    const end = start + text.length;
-    if (lineRelative >= start && lineRelative <= end) {
+  return [...root.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li,pre,td,th')]
+    .map((node) => {
+      const text = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) return null;
+      const found = pageText.indexOf(text, cursor);
+      const start = found >= 0 ? found : cursor;
+      const end = start + text.length;
+      cursor = Math.max(cursor, end);
+      const sourceValue = Number(node.getAttribute('data-wf-offset'));
       return {
+        node,
         text,
-        range: `${Number(page.startOffset || 0) + start}-${Number(page.startOffset || 0) + end}`,
+        start,
+        end,
+        sourceOffset: Number.isFinite(sourceValue) && sourceValue >= 0 ? sourceValue : null,
       };
-    }
-    cursor = Math.max(cursor, end);
+    })
+    .filter(Boolean);
+}
+
+function currentSourceLinePosition() {
+  const page = state.pages[state.pageIndex] || {};
+  const line = String(state.lines[state.lineIndex] || currentPageText() || '').trim();
+  const relative = Math.max(0, lineStartOffset() - Number(page.startOffset || 0));
+  const blocks = currentPageBlocks();
+  const block = blocks.find((item) => relative >= item.start && relative <= item.end);
+  if (block && block.sourceOffset !== null) {
+    const local = Math.max(0, Math.min(block.text.length, relative - block.start));
+    const offset = block.sourceOffset + local;
+    return {
+      offset,
+      summary: line || block.text,
+      text: line,
+      blockText: block.text,
+      range: `${offset}-${offset + Math.max(1, line.length)}`,
+      blockRange: `${block.sourceOffset}-${block.sourceOffset + block.text.length}`,
+    };
   }
-  return { text: pageText, range: `${Number(page.startOffset || 0)}-${Number(page.startOffset || 0) + pageText.length}` };
+  const fallback = Number(page.sourceStart);
+  if (Number.isFinite(fallback)) {
+    const offset = fallback + Math.max(0, relative - (blocks[0]?.start || 0));
+    return {
+      offset,
+      summary: line,
+      text: line,
+      blockText: line,
+      range: `${offset}-${offset + Math.max(1, line.length)}`,
+      blockRange: `${offset}-${offset + Math.max(1, line.length)}`,
+    };
+  }
+  return null;
+}
+
+function currentParagraphInfo() {
+  const source = currentSourceLinePosition();
+  if (source?.blockText) {
+    return {
+      text: source.blockText,
+      range: source.blockRange,
+      sourceOffset: source.offset,
+    };
+  }
+  const page = state.pages[state.pageIndex] || { sourceStart: 0, text: '' };
+  const start = Number(page.sourceStart || 0);
+  return { text: currentPageText(), range: `${start}-${start + String(page.text || '').length}`, sourceOffset: start };
 }
 
 function currentAnnotationContext(kind = 'line') {
-  const line = String(state.lines[state.lineIndex] || currentPageText() || '').trim();
-  const lineStart = lineStartOffset();
-  const lineRange = `${lineStart}-${lineStart + line.length}`;
+  const source = currentSourceLinePosition();
+  const line = String(source?.text || state.lines[state.lineIndex] || currentPageText() || '').trim();
+  const lineOffset = Number(source?.offset ?? 0);
+  const lineRange = `${lineOffset}-${lineOffset + line.length}`;
   const paragraph = currentParagraphInfo();
   return {
     text: kind === 'paragraph' ? paragraph.text : line,
@@ -809,6 +866,7 @@ async function loadChapter(index, resume = null) {
   state.pageCache.clear();
   state.chapterOffset = 0;
   state.chapterSummary = '';
+  state.chapterSourceLength = 0;
   state.bookProgress = 0;
   updateReaderHeader(chapter);
   setStatus('加载正文中…');
@@ -821,11 +879,11 @@ async function loadChapter(index, resume = null) {
       compact: window.innerHeight < 400,
     });
     state.chapterTextLength = Math.max(1, state.pages[state.pages.length - 1]?.endOffset || 1);
+    state.chapterSourceLength = Math.max(1, state.pages[state.pages.length - 1]?.sourceEnd || 1);
     const resumeOffset = Math.max(0, Number(resume?.chapterOffset || 0));
-    state.pageIndex = state.pages.findIndex((page, index) => (
-      resumeOffset >= page.startOffset
-      && (resumeOffset < page.endOffset || index === state.pages.length - 1)
-    ));
+    state.pageIndex = state.pages.reduce((matched, page, index) => (
+      Number(page.sourceStart || 0) <= resumeOffset ? index : matched
+    ), 0);
     if (state.pageIndex < 0) state.pageIndex = 0;
     state.bookProgress = Number(resume?.progress || state.currentBook.progress || 0);
     state.syncStatus = resume ? 'synced' : 'idle';
@@ -834,8 +892,10 @@ async function loadChapter(index, resume = null) {
       const page = state.pages[state.pageIndex];
       const lineWidth = trayLineWidth();
       const lines = WeFishPagination.splitLines(page.text, lineWidth);
+      const sourceStart = Number(page.sourceStart || 0);
+      const sourceEnd = Math.max(sourceStart + 1, Number(page.sourceEnd || sourceStart + page.text.length));
       const fraction = Math.max(0, Math.min(1,
-        (resumeOffset - page.startOffset) / Math.max(1, page.text.length),
+        (resumeOffset - sourceStart) / Math.max(1, sourceEnd - sourceStart),
       ));
       resumeLineIndex = Math.floor(fraction * Math.max(0, lines.length - 1));
       if (resumeOffset > page.startOffset && lines.length > 1) resumeLineIndex = Math.max(1, resumeLineIndex);
@@ -868,6 +928,7 @@ async function loadBook(rawBook) {
   closeShelf();
   if (window.location.hash !== '#self-test') rememberBook(book);
   state.currentBook = book;
+  state.bookVersion = '';
   state.reading = false;
   resetLineTimer();
   updateReadingUi();
@@ -880,6 +941,7 @@ async function loadBook(rawBook) {
   state.entitlement = {};
   state.membership = { status: 'unknown', source: 'web-reader-bootstrap', hasSnapshot: false };
   state.chapterOffset = 0;
+  state.chapterSourceLength = 0;
   state.chapterSummary = '';
   state.bookProgress = 0;
   state.remoteProgress = null;
@@ -887,6 +949,7 @@ async function loadBook(rawBook) {
   setStatus('打开书籍…');
   try {
     const data = await api('/api/reader/catalog', jsonBody({ bookId: book.bookId }));
+    state.bookVersion = String(data.bookVersion || '');
     state.entitlement = data.entitlement || {};
     state.chapters = (data.chapters || []).filter((chapter) => Number(chapter.wordCount || 1) > 0 && chapter.title !== '封面');
     if (!state.chapters.length) throw new Error('没有找到可读章节');
@@ -1118,6 +1181,7 @@ async function highlightCurrent(kind = 'line') {
     await api('/api/reader/highlight', jsonBody({
       bookId: state.currentBook.bookId,
       chapterUid: state.chapters[state.chapterIndex].chapterUid,
+      bookVersion: state.bookVersion,
       chapterName: state.chapters[state.chapterIndex].title || '',
       range: annotation.range,
       markText: annotation.text,
@@ -1143,12 +1207,14 @@ async function submitThought(content) {
     await api('/api/reader/thought', jsonBody({
       bookId: state.currentBook.bookId,
       chapterUid: state.chapters[state.chapterIndex].chapterUid,
+      bookVersion: state.bookVersion,
       range: annotation.range,
       abstract: annotation.line,
       content: text,
       type: 1,
+      isPrivate: 0,
     }));
-    toast('想法已同步到微信读书');
+    toast('想法已发布，并已从云端回读确认');
   } catch (error) {
     toast(`想法未发送：${error.message}`, true);
   }
@@ -1586,6 +1652,12 @@ async function boot() {
     applyTheme('dark');
   }
   updateReadingUi();
+  try {
+    if (localStorage.getItem('wefish.offsetProtocol') !== 'source-v1') {
+      localStorage.removeItem('wefish.pendingReports');
+      localStorage.setItem('wefish.offsetProtocol', 'source-v1');
+    }
+  } catch (_) { /* private mode */ }
   loadPendingReports();
   loadRecentBooks();
   renderShelfList();
@@ -1665,6 +1737,9 @@ if (window.location.hash === '#self-test') {
         pageIndex: state.pageIndex,
         lineIndex: state.lineIndex,
         resumeOffset: state.chapterOffset,
+        sourceOffset: readerPosition().offset,
+        chapterSourceLength: state.chapterSourceLength,
+        pageSourceStarts: state.pages.map((page) => page.sourceStart),
         preloadedPages: state.preloadedPages.slice(),
         overflow: getComputedStyle($('reader-body')).overflow,
         bodyHeight: $('reader-body').clientHeight,

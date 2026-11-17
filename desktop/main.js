@@ -499,13 +499,13 @@ function createTray() {
     { label: '上一行', accelerator: SHORTCUTS.linePrevious, click: () => dispatchCommand('line-previous') },
     { label: '下一行', accelerator: SHORTCUTS.lineNext, click: () => dispatchCommand('line-next') },
     { label: '自动逐行', accelerator: SHORTCUTS.lineToggle, click: () => dispatchCommand('line-toggle') },
-    { label: '当前内容', submenu: [
-      { label: '复制当前行', click: () => copyCurrentContent('line') },
-      { label: '复制当前段', click: () => copyCurrentContent('paragraph') },
-      { label: '划线当前行', click: () => dispatchCommand('highlight-line') },
-      { label: '划线当前段', click: () => dispatchCommand('highlight-paragraph') },
-      { label: '写想法', click: openThoughtWindow },
-    ] },
+    { type: 'separator' },
+    { label: '复制当前行', click: () => copyCurrentContent('line') },
+    { label: '复制当前段', click: () => copyCurrentContent('paragraph') },
+    { label: '划线当前行', click: () => dispatchCommand('highlight-line') },
+    { label: '划线当前段', click: () => dispatchCommand('highlight-paragraph') },
+    { label: '写想法', click: openThoughtWindow },
+    { type: 'separator' },
     { label: '阅读进度显示', submenu: [
       { label: '显示 / 隐藏行数', click: () => dispatchCommand('progress-lines:toggle') },
       { label: '显示 / 隐藏百分比', click: () => dispatchCommand('progress-percent:toggle') },
@@ -899,11 +899,14 @@ async function assertMockRenderer() {
   if (!snapshot || snapshot.pageCount < 2) throw new Error(`renderer pagination did not produce multiple pages: ${JSON.stringify(snapshot)}`);
   if (!snapshot.ringDashoffset || Number(snapshot.ringDashoffset) <= 0) throw new Error('renderer progress ring did not draw a partial arc');
   if (snapshot.overflow !== 'hidden') throw new Error(`renderer scroll is enabled: ${snapshot.overflow}`);
-  if (snapshot.resumeOffset < 40 || !snapshot.lineProgress || snapshot.lineProgress.startsWith('1 /')) {
+  if (snapshot.resumeOffset <= 0 || snapshot.pageIndex !== 0 || snapshot.lineIndex < 1 || !snapshot.lineProgress) {
     throw new Error(`renderer did not restore the remote in-page position: ${JSON.stringify(snapshot)}`);
   }
+  if (snapshot.sourceOffset <= 0 || snapshot.chapterSourceLength <= 0) {
+    throw new Error(`reader source coordinates are unavailable: ${JSON.stringify(snapshot)}`);
+  }
   if (!Array.isArray(snapshot.preloadedPages) || snapshot.preloadedPages.length < 2) {
-    throw new Error('renderer did not preload the next pages');
+    throw new Error(`renderer did not preload the next pages: ${JSON.stringify(snapshot)}`);
   }
   if (!snapshot.lineProgress || snapshot.lineProgress === '1 / 1 行' || !snapshot.lineProgress.includes('/')) {
     throw new Error(`renderer line progress is page-local: ${snapshot.lineProgress}`);
@@ -1005,8 +1008,10 @@ async function assertMockRenderer() {
   }
   setReaderContentVisible(true);
   if (readerVisibilityItem.label !== readerVisibilityLabel(true)) throw new Error('reader visibility menu label did not update');
-  const contentMenu = trayMenu?.items.find((candidate) => candidate.label === '当前内容');
-  const contentLabels = contentMenu?.submenu?.items.map((item) => item.label) || [];
+  if (trayMenu?.items.some((candidate) => candidate.label === '当前内容')) {
+    throw new Error('tray content actions are still nested');
+  }
+  const contentLabels = trayMenu?.items.map((item) => item.label) || [];
   for (const label of ['复制当前行', '复制当前段', '划线当前行', '划线当前段', '写想法']) {
     if (!contentLabels.includes(label)) throw new Error(`tray content action is missing: ${label}`);
   }
