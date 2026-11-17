@@ -107,11 +107,14 @@
         <label class="help-speed"><span>自动逐行速度</span><input id="help-line-interval" type="number" min="0.5" max="10" step="0.5" value="1" /><b>秒</b><small>自动逐行开关和速度位于同一组；数值越小换行越快，也可以右键托盘图标调整。</small></label>
         <div class="help-section tray-width-section"><h3>顶部栏阅读区域</h3><label class="tray-width-mode"><span>宽度模式</span><select id="tray-width-mode"><option value="dynamic">跟随文本（动态）</option><option value="fixed">固定长度</option><option value="fill">尽量占满空余位置</option></select></label><div class="tray-width-value"><span id="tray-width-value-label">固定长度</span><input id="tray-width-chars" type="range" min="12" max="120" step="1" value="28" /><input id="tray-width-number" type="number" min="12" max="120" step="1" value="28" aria-label="顶部栏阅读区域长度" /><b>字</b></div><p class="tray-width-hint" id="tray-width-hint">文字多长，顶部栏就占多长。</p></div>
         <div class="help-section progress-settings"><h3>阅读进度显示</h3><label><input type="checkbox" id="show-line-progress" checked />显示当前行数（x / xx 行）</label><label><input type="checkbox" id="show-percent-progress" checked />显示百分比与进度环</label><p>两项可以分别隐藏；任务栏右键菜单里的“阅读进度显示”也能切换。</p></div>
-        <p class="help-note">点击菜单栏或托盘图标只会打开独立的设置菜单，不会弹出阅读小窗；阅读舱仍可通过阅读舱快捷键或菜单中的明确选项打开。“自动逐行”和速度已放在同一组；拖动顶部空白区域可移动小窗。点击右上角“日 / 夜”切换阅读外观，托盘菜单也可控制深色模式。</p>
+        <p class="help-note">点击菜单栏或托盘图标只会打开独立的设置菜单，不会弹出阅读小窗；阅读舱仍可通过阅读舱快捷键或菜单中的明确选项打开。“自动逐行”和速度已放在同一组；拖动顶部空白区域可移动小窗。进入小窗模式后，拖动右下角斜纹手柄即可调整宽度和高度，尺寸会自动记住；任务栏右键菜单也提供三种预设尺寸。点击右上角“日 / 夜”切换阅读外观，托盘菜单也可控制深色模式。</p>
       </div>
     </section>
   </div>
 
+  <div class="window-resize-handle" id="window-resize-handle" title="拖动调整小窗大小" aria-label="拖动调整小窗大小">
+    <i></i><i></i><i></i>
+  </div>
   <div class="toast" id="toast" role="status"></div>
   <script src="./pagination.js"></script>
   <script src="./app.js"></script>

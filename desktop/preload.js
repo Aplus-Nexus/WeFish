@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('wefish', {
   onCommand: (callback) => ipcRenderer.on('command', (_event, command) => callback(command)),
   sendCurrentContext: (value) => ipcRenderer.send('current-context', value || {}),
   onVisibility: (callback) => ipcRenderer.on('panel-visibility', (_event, visible) => callback(visible)),
+  onCompactMode: (callback) => ipcRenderer.on('compact-mode', (_event, compact) => callback(Boolean(compact))),
+  resizeCompactWindow: (width, height) => ipcRenderer.send('resize-compact-window', {
+    width: Number(width || 0),
+    height: Number(height || 0),
+  }),
   onMiniUpdate: (callback) => ipcRenderer.on('mini-update', (_event, value) => callback(value)),
   miniReady: () => ipcRenderer.send('mini-ready'),
   onBridgeError: (callback) => ipcRenderer.on('bridge-error', (_event, message) => callback(message)),

@@ -54,6 +54,8 @@ const INTEGRATION_PORT = Math.max(1024, Number(process.env.WEFISH_INTEGRATION_PO
 let integrationServer = null;
 let panelPlaced = false;
 let panelPosition = null;
+let compactWindowSize = { width: 390, height: 270 };
+let compactSizeSaveTimer = null;
 let rendererReady = Promise.resolve();
 let miniSurfaceReady = Promise.resolve();
 let miniSurfacePosition = null;
@@ -83,8 +85,7 @@ function positionPanel(force = false) {
   if (panelPlaced && !force) return;
   const display = screen.getPrimaryDisplay();
   const work = display.workArea;
-  const width = 390;
-  const height = !isWindows && compactMode ? 270 : 650;
+  const [width, height] = panel.getSize();
   const x = Number.isFinite(panelPosition?.x)
     ? Math.max(work.x, Math.min(Number(panelPosition.x), work.x + work.width - width))
     : work.x + work.width - width - 14;
@@ -93,6 +94,61 @@ function positionPanel(force = false) {
     : work.y + 12;
   panel.setBounds({ x, y, width, height }, false);
   panelPlaced = true;
+}
+
+function loadWindowSize(name) {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), `${name}.json`), 'utf8'));
+    if (Number.isFinite(value?.width) && Number.isFinite(value?.height)) {
+      return { width: Math.round(value.width), height: Math.round(value.height) };
+    }
+  } catch (_) { /* first run or invalid saved size */ }
+  return null;
+}
+
+function saveWindowSize(name, size) {
+  if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
+  try {
+    fs.writeFileSync(
+      path.join(app.getPath('userData'), `${name}.json`),
+      JSON.stringify({ width: Math.round(size.width), height: Math.round(size.height) }),
+      { mode: 0o600 },
+    );
+  } catch (_) { /* size persistence is best effort */ }
+}
+
+function scheduleCompactSizeSave() {
+  if (!compactMode || !panel || panel.isDestroyed() || selfTestMode) return;
+  clearTimeout(compactSizeSaveTimer);
+  compactSizeSaveTimer = setTimeout(() => {
+    compactSizeSaveTimer = null;
+    if (!panel || panel.isDestroyed() || !compactMode) return;
+    const [width, height] = panel.getSize();
+    compactWindowSize = { width, height };
+    saveWindowSize('compact-panel-size', compactWindowSize);
+  }, 150);
+}
+
+function compactSizeWithinDisplay(bounds, width, height) {
+  const display = screen.getDisplayMatching(bounds);
+  const work = display.workArea;
+  return {
+    width: Math.max(320, Math.min(Math.round(width), Math.max(320, work.width - 24))),
+    height: Math.max(190, Math.min(Math.round(height), Math.max(190, work.height - 24))),
+  };
+}
+
+function setCompactWindowSize(width, height, { show = false } = {}) {
+  if (!panel || panel.isDestroyed()) return null;
+  const current = panel.getBounds();
+  const size = compactSizeWithinDisplay(current, width, height);
+  compactWindowSize = size;
+  panel.setResizable(true);
+  panel.setSize(size.width, size.height, false);
+  positionPanel(true);
+  scheduleCompactSizeSave();
+  if (show) setPanelVisible(true);
+  return size;
 }
 
 function setPanelVisible(visible) {
@@ -133,13 +189,17 @@ function toggleReaderContentVisible() {
   setReaderContentVisible(!readerContentVisible);
 }
 
-function dispatchCommand(command) {
+function dispatchToRenderer(channel, payload) {
   if (!panel || panel.isDestroyed()) return;
   const send = () => {
-    if (panel && !panel.isDestroyed()) panel.webContents.send('command', command);
+    if (panel && !panel.isDestroyed()) panel.webContents.send(channel, payload);
   };
   if (panel.webContents.isLoading()) rendererReady.then(send).catch(() => {});
   else send();
+}
+
+function dispatchCommand(command) {
+  dispatchToRenderer('command', command);
 }
 
 function loadWindowPosition(name) {
@@ -338,17 +398,34 @@ function setTrayLine(value) {
 }
 
 function setCompactMode(enabled) {
-  compactMode = Boolean(enabled);
+  const nextMode = Boolean(enabled);
+  if (compactMode && !nextMode && panel && !panel.isDestroyed()) {
+    const [width, height] = panel.getSize();
+    compactWindowSize = { width, height };
+    if (!selfTestMode) saveWindowSize('compact-panel-size', compactWindowSize);
+  }
+  if (!compactMode && nextMode && panel && !panel.isDestroyed()) {
+    const [width, height] = panel.getSize();
+    if (width !== 390 || height !== 650) compactWindowSize = { width, height };
+  }
+  compactMode = nextMode;
+  dispatchToRenderer('compact-mode', compactMode && !isWindows);
   if (isWindows) {
     setMiniSurfaceVisible(readerContentVisible && compactMode);
     if (compactMenuItem) compactMenuItem.checked = compactMode;
     return;
   }
   if (panel) {
-    panel.setMinimumSize(390, 270);
-    panel.setSize(390, compactMode ? 270 : 650);
+    if (compactMode) {
+      panel.setResizable(true);
+      compactWindowSize = compactSizeWithinDisplay(panel.getBounds(), compactWindowSize.width, compactWindowSize.height);
+      panel.setSize(compactWindowSize.width, compactWindowSize.height);
+    } else {
+      panel.setResizable(false);
+      panel.setSize(390, 650);
+    }
     panel.setOpacity(compactMode ? 0.88 : 1);
-    positionPanel();
+    positionPanel(true);
   }
   if (compactMenuItem) compactMenuItem.checked = compactMode;
 }
@@ -357,10 +434,10 @@ function createPanel() {
   panel = new BrowserWindow({
     width: 390,
     height: 650,
-    minWidth: 390,
-    maxWidth: 390,
-    minHeight: 270,
-    maxHeight: 760,
+    minWidth: 320,
+    maxWidth: 1200,
+    minHeight: 190,
+    maxHeight: 900,
     show: false,
     frame: false,
     movable: true,
@@ -382,7 +459,9 @@ function createPanel() {
     },
   });
   panelPosition = loadWindowPosition('panel-position');
+  compactWindowSize = loadWindowSize('compact-panel-size') || compactWindowSize;
   rendererReady = new Promise((resolve) => panel.webContents.once('did-finish-load', resolve));
+  panel.webContents.on('did-finish-load', () => panel.webContents.send('compact-mode', compactMode));
   if (showOnStart) panel.webContents.once('did-finish-load', () => setPanelVisible(true));
   panel.loadFile(path.join(__dirname, 'renderer', 'index.html'), { hash: selfTestMode ? 'self-test' : '' });
   panel.on('blur', () => {
@@ -397,6 +476,7 @@ function createPanel() {
     panelPosition = { x, y };
     saveWindowPosition('panel-position', panelPosition);
   });
+  panel.on('resize', scheduleCompactSizeSave);
   panel.on('closed', () => { panel = null; });
 }
 
@@ -528,6 +608,13 @@ function createTray() {
     ] },
     { label: '快捷键与使用说明', accelerator: SHORTCUTS.help, click: () => { setPanelVisible(true); dispatchCommand('help'); } },
     { label: '微信扫码', click: () => { setPanelVisible(true); dispatchCommand('qr'); } },
+    { label: '小窗大小', submenu: [
+      { label: '紧凑 390 × 270', click: () => { setCompactMode(true); setCompactWindowSize(390, 270, { show: true }); } },
+      { label: '舒适 480 × 340', click: () => { setCompactMode(true); setCompactWindowSize(480, 340, { show: true }); } },
+      { label: '宽屏 600 × 420', click: () => { setCompactMode(true); setCompactWindowSize(600, 420, { show: true }); } },
+      { type: 'separator' },
+      { label: '拖动小窗右下角可自由调整', enabled: false },
+    ] },
     { id: 'compact-mode', label: '小窗模式', accelerator: SHORTCUTS.compact, type: 'checkbox', click: (item) => setCompactMode(item.checked) },
     { id: 'theme-dark-mode', label: '深色模式', type: 'checkbox', checked: themeMode === 'dark', click: (item) => {
       const nextMode = item.checked ? 'dark' : 'light';
@@ -921,10 +1008,31 @@ async function assertMockRenderer() {
     await captureUi('light-reader');
     await panel.webContents.executeJavaScript(`applyTheme('dark')`, true);
   }
-  panel.setSize(390, 270);
+  if (!isWindows) {
+    setCompactMode(true);
+    const resized = setCompactWindowSize(480, 340);
+    const [compactWidth, compactHeight] = panel.getSize();
+    if (!panel.isResizable() || compactWidth !== resized.width || compactHeight !== resized.height) {
+      throw new Error(`compact reader did not resize: ${compactWidth}x${compactHeight}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const compactUi = await panel.webContents.executeJavaScript(`({
+      compact: document.body.dataset.compact,
+      handleVisible: getComputedStyle(document.querySelector('#window-resize-handle')).display !== 'none'
+    })`, true);
+    if (compactUi.compact !== 'true' || !compactUi.handleVisible) {
+      throw new Error(`compact resize handle is unavailable: ${JSON.stringify(compactUi)}`);
+    }
+  }
   await new Promise((resolve) => setTimeout(resolve, 50));
   await captureUi('compact-reader');
-  panel.setSize(390, 650);
+  if (!isWindows) {
+    setCompactMode(false);
+    const [fullWidth, fullHeight] = panel.getSize();
+    if (panel.isResizable() || fullWidth !== 390 || fullHeight !== 650) {
+      throw new Error(`full reader did not restore its fixed size: ${fullWidth}x${fullHeight}`);
+    }
+  }
   const next = await panel.webContents.executeJavaScript('window.__wefishTest.nextPage()', true);
   if (next.pageIndex !== Math.min(snapshot.pageCount - 1, snapshot.pageIndex + 1)) throw new Error('renderer next-page action failed');
   const line = await panel.webContents.executeJavaScript('window.__wefishTest.nextLine()', true);
@@ -1010,6 +1118,10 @@ async function assertMockRenderer() {
   if (readerVisibilityItem.label !== readerVisibilityLabel(true)) throw new Error('reader visibility menu label did not update');
   if (trayMenu?.items.some((candidate) => candidate.label === '当前内容')) {
     throw new Error('tray content actions are still nested');
+  }
+  const compactSizeMenu = trayMenu?.items.find((candidate) => candidate.label === '小窗大小');
+  if (!compactSizeMenu?.submenu?.items.some((item) => item.label.includes('480 × 340'))) {
+    throw new Error('compact reader size presets are missing');
   }
   const contentLabels = trayMenu?.items.map((item) => item.label) || [];
   for (const label of ['复制当前行', '复制当前段', '划线当前行', '划线当前段', '写想法']) {
@@ -1100,6 +1212,10 @@ if (hasInstanceLock) {
     ipcMain.on('theme-mode', (_event, mode) => {
       updateThemeMode(mode);
       updateMiniSurface({ ...miniSnapshot, themeMode });
+    });
+    ipcMain.on('resize-compact-window', (_event, value) => {
+      if (!compactMode || isWindows || !panel || panel.isDestroyed()) return;
+      setCompactWindowSize(Number(value?.width), Number(value?.height));
     });
     ipcMain.on('current-context', (_event, value) => {
       if (!value || typeof value !== 'object') return;

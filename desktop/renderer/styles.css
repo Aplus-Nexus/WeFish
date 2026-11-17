@@ -35,6 +35,29 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lime); outl
   overflow: hidden; box-shadow: var(--shadow);
 }
 .shell::before { content: ""; position: absolute; z-index: 0; top: 0; left: 0; right: 0; height: 3px; background: var(--lime); }
+.window-resize-handle {
+  position: fixed;
+  z-index: 40;
+  right: 2px;
+  bottom: 2px;
+  display: none;
+  grid-template-columns: repeat(3, 4px);
+  grid-template-rows: repeat(3, 4px);
+  gap: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  cursor: nwse-resize;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+body[data-compact="true"] .window-resize-handle { display: grid; }
+.window-resize-handle i { width: 4px; height: 4px; border-radius: 50%; background: var(--paper-dim); opacity: .75; }
+.window-resize-handle i:nth-child(1) { grid-column: 2; grid-row: 2; }
+.window-resize-handle i:nth-child(2) { grid-column: 3; grid-row: 2; }
+.window-resize-handle i:nth-child(3) { grid-column: 3; grid-row: 3; }
 .topbar, .status-row, .reader-stage, .control-bar, .shortcut-hint { position: relative; z-index: 1; }
 .topbar { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 17px 18px 10px; -webkit-app-region: drag; cursor: grab; }
 .topbar:active { cursor: grabbing; }

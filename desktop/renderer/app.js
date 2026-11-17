@@ -1544,6 +1544,39 @@ async function loadState({ openShelfOnSuccess = false } = {}) {
   }
 }
 
+function bindCompactWindowResize() {
+  const handle = $('window-resize-handle');
+  if (!handle) return;
+  let gesture = null;
+  const finish = (event) => {
+    if (!gesture) return;
+    gesture = null;
+    document.body.classList.remove('resizing-compact');
+    if (handle.hasPointerCapture?.(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+  };
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || document.body.dataset.compact !== 'true') return;
+    event.preventDefault();
+    gesture = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+    handle.setPointerCapture?.(event.pointerId);
+    document.body.classList.add('resizing-compact');
+  });
+  handle.addEventListener('pointermove', (event) => {
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    const width = gesture.width + event.clientX - gesture.x;
+    const height = gesture.height + event.clientY - gesture.y;
+    window.wefish.resizeCompactWindow?.(width, height);
+  });
+  handle.addEventListener('pointerup', finish);
+  handle.addEventListener('pointercancel', finish);
+}
+
 function bindEvents() {
   $('open-shelf').addEventListener('click', openShelf);
   $('open-insights').addEventListener('click', showInsights);
@@ -1580,6 +1613,10 @@ function bindEvents() {
   $('tray-width-mode').addEventListener('change', (event) => setTrayWidth(event.target.value, $('tray-width-number').value, true));
   $('tray-width-chars').addEventListener('input', (event) => setTrayWidth(state.trayWidthMode, event.target.value));
   $('tray-width-number').addEventListener('change', (event) => setTrayWidth(state.trayWidthMode, event.target.value, true));
+  bindCompactWindowResize();
+  window.wefish.onCompactMode((compact) => {
+    document.body.dataset.compact = compact ? 'true' : 'false';
+  });
   window.addEventListener('keydown', (event) => {
     if (!(event.metaKey || event.ctrlKey) || !event.altKey) return;
     const key = event.key;
