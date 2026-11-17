@@ -28,6 +28,7 @@ const state = {
   lineIndex: 0,
   lineAuto: true,
   lineTimer: null,
+  lineAdvanceInFlight: false,
   lineIntervalMs: 1000,
   trayWidthMode: 'dynamic',
   trayWidthChars: 28,
@@ -599,13 +600,25 @@ function updateLineDisplay() {
   schedulePositionSync();
 }
 
-function resetLineTimer() {
-  clearInterval(state.lineTimer);
+function resetLineTimer(delayMs = state.lineIntervalMs) {
+  clearTimeout(state.lineTimer);
   state.lineTimer = null;
-  if (!state.lineAuto) return;
-  state.lineTimer = setInterval(() => {
-    if (state.reading) nextLine(1, true);
-  }, state.lineIntervalMs);
+  if (!state.lineAuto || !state.reading || !state.currentBook) return;
+  state.lineTimer = setTimeout(runScheduledLineAdvance, Math.max(50, Number(delayMs) || state.lineIntervalMs));
+}
+
+async function runScheduledLineAdvance() {
+  state.lineTimer = null;
+  if (!state.lineAuto || !state.reading || !state.currentBook) return;
+  const startedAt = Date.now();
+  try {
+    await nextLine(1, true);
+  } finally {
+    if (state.lineAuto && state.reading && state.currentBook) {
+      const elapsed = Date.now() - startedAt;
+      resetLineTimer(Math.max(50, state.lineIntervalMs - elapsed));
+    }
+  }
 }
 
 function setLineInterval(seconds, notify = false) {
@@ -626,20 +639,44 @@ function setLineAuto(enabled) {
   updateLineDisplay();
 }
 
-function nextLine(delta = 1, fromTimer = false) {
-  if (!state.pages.length) return;
-  const next = state.lineIndex + delta;
-  if (next >= 0 && next < state.lines.length) {
-    state.lineIndex = next;
-    updateLineDisplay();
-    return;
-  }
-  if (delta > 0 && state.pageIndex < state.pages.length - 1) {
-    showPage(state.pageIndex + 1);
-  } else if (delta < 0 && state.pageIndex > 0) {
-    showPage(state.pageIndex - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
-  } else if (!fromTimer && delta > 0) {
-    goNextChapter();
+async function nextLine(delta = 1) {
+  if (!state.pages.length || state.lineAdvanceInFlight) return false;
+  state.lineAdvanceInFlight = true;
+  const step = Number(delta) < 0 ? -1 : 1;
+  try {
+    const next = state.lineIndex + step;
+    if (next >= 0 && next < state.lines.length) {
+      state.lineIndex = next;
+      updateLineDisplay();
+      return true;
+    }
+    if (step > 0) {
+      if (state.pageIndex < state.pages.length - 1) {
+        showPage(state.pageIndex + 1);
+        return true;
+      }
+      if (state.chapterIndex >= 0 && state.chapterIndex < state.chapters.length - 1) {
+        const loaded = await loadChapter(state.chapterIndex + 1);
+        if (loaded && state.pages.length) showPage(0, { lineIndex: 0 });
+        return loaded;
+      }
+      return false;
+    }
+    if (state.pageIndex > 0) {
+      showPage(state.pageIndex - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+      return true;
+    }
+    if (state.chapterIndex > 0) {
+      const previousChapter = state.chapterIndex - 1;
+      const loaded = await loadChapter(previousChapter);
+      if (loaded && state.pages.length) {
+        showPage(state.pages.length - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+      }
+      return loaded;
+    }
+    return false;
+  } finally {
+    state.lineAdvanceInFlight = false;
   }
 }
 
@@ -680,10 +717,38 @@ async function fetchChapterHtml(index) {
   return String(html || '');
 }
 
+function queuePositionReportForNavigation() {
+  if (!state.currentBook || !state.reading || state.chapterIndex < 0 || state.currentBook.isMp) return;
+  clearTimeout(state.positionSyncTimer);
+  state.positionSyncTimer = null;
+  const chapter = state.chapters[state.chapterIndex];
+  if (!chapter) return;
+  const position = readerPosition();
+  const delta = Math.max(0, Math.floor(state.elapsed - state.reportedElapsed));
+  const payload = {
+    bookId: state.currentBook.bookId,
+    chapterUid: chapter.chapterUid,
+    chapterIdx: chapter.chapterIdx || state.chapterIndex + 1,
+    chapterOffset: position.offset,
+    progress: position.progress || state.currentBook.progress || 0,
+    summary: position.summary,
+    elapsed: delta,
+  };
+  state.chapterOffset = position.offset;
+  state.chapterSummary = position.summary;
+  state.bookProgress = position.progress;
+  state.reportedElapsed = state.elapsed;
+  state.pendingReports.push(payload);
+  state.pendingReports = state.pendingReports.slice(-12);
+  savePendingReports();
+  // The chapter can render immediately. The previous position and reading
+  // time continue through the ordered pending-report queue in the background.
+  flushPendingReports().catch(() => {});
+}
+
 async function loadChapter(index, resume = null) {
-  if (!state.currentBook || !state.chapters.length) return;
-  await waitForReportIdle(900);
-  await reportReading(true);
+  if (!state.currentBook || !state.chapters.length) return false;
+  queuePositionReportForNavigation();
   const nextIndex = Math.max(0, Math.min(index, state.chapters.length - 1));
   const chapter = state.chapters[nextIndex];
   const generation = ++state.loadGeneration;
@@ -699,7 +764,7 @@ async function loadChapter(index, resume = null) {
   setStatus('加载正文中…');
   try {
     const html = await fetchChapterHtml(nextIndex);
-    if (generation !== state.loadGeneration) return;
+    if (generation !== state.loadGeneration) return false;
     const body = safeReaderHtml(html);
     state.pages = WeFishPagination.paginateFragment(body, {
       container: $('reader-body'),
@@ -733,12 +798,14 @@ async function loadChapter(index, resume = null) {
     }
     setStatus('正在阅读', 'active');
     resetLineTimer();
+    return true;
   } catch (error) {
     state.reading = false;
     setStatus('正文暂时不可用', 'warn');
     $('reader-body').innerHTML = '<div class="empty-state"><div class="empty-glyph">!</div><h2>这章还没打开</h2><p></p></div>';
     $('reader-body p').textContent = error.message;
     toast(error.message, true);
+    return false;
   }
 }
 
@@ -1029,28 +1096,34 @@ async function submitThought(content) {
   }
 }
 
-function goPrevious() {
+async function goPrevious() {
   if (state.pageIndex > 0) {
     showPage(state.pageIndex - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
   } else {
-    goPreviousChapter();
+    await goPreviousChapter({ atEnd: true });
   }
 }
 
-function goNext() {
+async function goNext() {
   if (state.pageIndex < state.pages.length - 1) {
     showPage(state.pageIndex + 1);
   } else {
-    goNextChapter();
+    await goNextChapter();
   }
 }
 
-function goPreviousChapter() {
-  if (state.chapterIndex > 0) loadChapter(state.chapterIndex - 1);
+async function goPreviousChapter({ atEnd = false } = {}) {
+  if (state.chapterIndex <= 0) return false;
+  const loaded = await loadChapter(state.chapterIndex - 1);
+  if (loaded && atEnd && state.pages.length) {
+    showPage(state.pages.length - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+  }
+  return loaded;
 }
 
-function goNextChapter() {
-  if (state.chapterIndex >= 0 && state.chapterIndex < state.chapters.length - 1) loadChapter(state.chapterIndex + 1);
+async function goNextChapter() {
+  if (state.chapterIndex < 0 || state.chapterIndex >= state.chapters.length - 1) return false;
+  return loadChapter(state.chapterIndex + 1);
 }
 
 async function jumpToProgress(value) {
@@ -1510,13 +1583,51 @@ if (window.location.hash === '#self-test') {
         membership: state.membership,
       };
     },
-    nextPage() {
-      goNext();
+    async nextPage() {
+      await goNext();
       return { pageIndex: state.pageIndex, pageCount: state.pages.length };
     },
-    nextLine() {
-      nextLine(1);
+    async nextLine() {
+      await nextLine(1);
       return { lineIndex: state.lineIndex, line: state.lines[state.lineIndex] || '' };
+    },
+    async checkChapterNavigation() {
+      const originalAuto = state.lineAuto;
+      const originalInterval = state.lineIntervalMs;
+      state.lineAuto = false;
+      clearTimeout(state.lineTimer);
+      state.lineTimer = null;
+      await loadChapter(0);
+      showPage(state.pages.length - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+      const previousChapterLastLine = state.lines.length - 1;
+      await nextLine(1);
+      const forward = {
+        chapterIndex: state.chapterIndex,
+        pageIndex: state.pageIndex,
+        lineIndex: state.lineIndex,
+      };
+      await nextLine(-1);
+      const backward = {
+        chapterIndex: state.chapterIndex,
+        pageIndex: state.pageIndex,
+        lineIndex: state.lineIndex,
+        expectedLineIndex: previousChapterLastLine,
+      };
+
+      state.lineAuto = true;
+      state.reading = true;
+      showPage(state.pages.length - 1, { lineIndex: Number.MAX_SAFE_INTEGER });
+      clearTimeout(state.lineTimer);
+      state.lineTimer = null;
+      await runScheduledLineAdvance();
+      const timerScheduled = Boolean(state.lineTimer) && !state.lineAdvanceInFlight;
+
+      state.lineAuto = originalAuto;
+      state.lineIntervalMs = originalInterval;
+      clearTimeout(state.lineTimer);
+      state.lineTimer = null;
+      resetLineTimer();
+      return { forward, backward, timerScheduled };
     },
     async jumpToProgress(value) {
       await jumpToProgress(value);

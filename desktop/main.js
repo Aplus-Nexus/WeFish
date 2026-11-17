@@ -16,6 +16,7 @@ if (!hasInstanceLock) {
 const isWindows = process.platform === 'win32';
 const SHORTCUTS = Object.freeze({
   togglePanel: 'CommandOrControl+Alt+M',
+  readerVisibility: 'CommandOrControl+Alt+Shift+M',
   sync: 'CommandOrControl+Alt+R',
   pagePrevious: 'CommandOrControl+Alt+Left',
   pageNext: 'CommandOrControl+Alt+Right',
@@ -40,6 +41,8 @@ let bridgeUrl = '';
 let stopping = false;
 let officeTitleMode = false;
 let officeTitleMenuItem = null;
+let readerVisibilityMenuItem = null;
+let readerContentVisible = true;
 let compactMode = isWindows;
 let compactMenuItem = null;
 let quitInProgress = false;
@@ -97,6 +100,27 @@ function setPanelVisible(visible) {
 
 function togglePanel() {
   setPanelVisible(!panel || !panel.isVisible());
+}
+
+function readerVisibilityLabel(visible = readerContentVisible) {
+  const surface = isWindows ? '任务栏阅读器' : '菜单栏阅读器';
+  return `${visible ? '隐藏' : '显示'}${surface}`;
+}
+
+function updateReaderVisibilityMenuItem() {
+  if (readerVisibilityMenuItem) readerVisibilityMenuItem.label = readerVisibilityLabel();
+}
+
+function setReaderContentVisible(visible) {
+  readerContentVisible = Boolean(visible);
+  updateReaderVisibilityMenuItem();
+  renderTrayTitle();
+  updateProgressTray();
+  if (isWindows) setMiniSurfaceVisible(readerContentVisible && compactMode);
+}
+
+function toggleReaderContentVisible() {
+  setReaderContentVisible(!readerContentVisible);
 }
 
 function dispatchCommand(command) {
@@ -160,7 +184,7 @@ function updateMiniSurface(value) {
     if (!miniSurface || miniSurface.isDestroyed()) return;
     miniSurface.setBounds(miniSurfaceBounds(), false);
     miniSurface.webContents.send('mini-update', miniSnapshot);
-    setMiniSurfaceVisible(compactMode);
+    setMiniSurfaceVisible(readerContentVisible && compactMode);
   }).catch(() => {});
 }
 
@@ -199,25 +223,30 @@ function progressRingImage(value, visible = true) {
 
 function updateProgressTray() {
   if (!progressTray || progressTray.isDestroyed()) return;
+  const shouldShow = readerContentVisible && miniSnapshot.showPercent !== false;
+  if (typeof progressTray.setVisible === 'function') progressTray.setVisible(shouldShow);
+  if (!shouldShow) {
+    progressTrayHasRing = false;
+    progressTray.setToolTip('阅读进度已隐藏');
+    return;
+  }
   let image = null;
-  if (miniSnapshot.showPercent !== false && miniSnapshot.ringPng) {
+  if (miniSnapshot.ringPng) {
     image = nativeImage.createFromDataURL(miniSnapshot.ringPng);
   }
   if (!image || image.isEmpty()) {
-    image = progressRingImage(miniSnapshot.percent, miniSnapshot.showPercent !== false);
+    image = progressRingImage(miniSnapshot.percent, true);
   }
   progressTray.setImage(image);
-  progressTrayHasRing = miniSnapshot.showPercent !== false && !image.isEmpty();
-  progressTray.setToolTip(
-    miniSnapshot.showPercent === false
-      ? '阅读进度已隐藏'
-      : `${miniSnapshot.lineProgress || '阅读进度'} · ${Math.round(Number(miniSnapshot.percent) || 0)}%`,
-  );
+  progressTrayHasRing = !image.isEmpty();
+  progressTray.setToolTip(`${miniSnapshot.lineProgress || '阅读进度'} · ${Math.round(Number(miniSnapshot.percent) || 0)}%`);
 }
 
 function renderTrayTitle() {
-  if (!tray || officeTitleMode) return;
-  const title = `${trayLineText}${trayProgressTitle}`.trim();
+  if (!tray) return;
+  const title = officeTitleMode || !readerContentVisible
+    ? ''
+    : `${trayLineText}${trayProgressTitle}`.trim();
   if (process.platform === 'darwin' && typeof tray.setTitle === 'function') {
     tray.setTitle(title);
   }
@@ -258,7 +287,7 @@ function setTrayLine(value) {
 function setCompactMode(enabled) {
   compactMode = Boolean(enabled);
   if (isWindows) {
-    setMiniSurfaceVisible(compactMode);
+    setMiniSurfaceVisible(readerContentVisible && compactMode);
     if (compactMenuItem) compactMenuItem.checked = compactMode;
     return;
   }
@@ -291,6 +320,10 @@ function createPanel() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      // The reading capsule normally lives in a hidden BrowserWindow. Chromium
+      // otherwise throttles its line timer in the background, which made a
+      // configured 2-second cadence occasionally pause for around 10 seconds.
+      backgroundThrottling: false,
     },
   });
   rendererReady = new Promise((resolve) => panel.webContents.once('did-finish-load', resolve));
@@ -383,6 +416,7 @@ function createTray() {
   tray.on('click', togglePanel);
   const menu = Menu.buildFromTemplate([
     { label: '显示 / 隐藏阅读舱', accelerator: SHORTCUTS.togglePanel, click: togglePanel },
+    { id: 'reader-content-visibility', label: readerVisibilityLabel(), accelerator: SHORTCUTS.readerVisibility, click: toggleReaderContentVisible },
     { type: 'separator' },
     { label: '同步书架', accelerator: SHORTCUTS.sync, click: () => dispatchCommand('sync') },
     { label: '上一页', accelerator: SHORTCUTS.pagePrevious, click: () => dispatchCommand('page-previous') },
@@ -435,7 +469,9 @@ function createTray() {
   ]);
   compactMenuItem = menu.getMenuItemById('compact-mode');
   officeTitleMenuItem = menu.getMenuItemById('office-title-mode');
+  readerVisibilityMenuItem = menu.getMenuItemById('reader-content-visibility');
   compactMenuItem.checked = compactMode;
+  updateReaderVisibilityMenuItem();
   trayMenu = menu;
   tray.setContextMenu(menu);
 }
@@ -626,6 +662,7 @@ function startBridge() {
 
 function registerShortcuts() {
   globalShortcut.register(SHORTCUTS.togglePanel, togglePanel);
+  globalShortcut.register(SHORTCUTS.readerVisibility, toggleReaderContentVisible);
   globalShortcut.register(SHORTCUTS.help, () => { setPanelVisible(true); dispatchCommand('help'); });
   globalShortcut.register(SHORTCUTS.sync, () => dispatchCommand('sync'));
   globalShortcut.register(SHORTCUTS.pagePrevious, () => dispatchCommand('page-previous'));
@@ -766,6 +803,17 @@ async function assertMockRenderer() {
   if (next.pageIndex !== Math.min(snapshot.pageCount - 1, snapshot.pageIndex + 1)) throw new Error('renderer next-page action failed');
   const line = await panel.webContents.executeJavaScript('window.__wefishTest.nextLine()', true);
   if (!line.line) throw new Error('renderer line ticker did not produce text');
+  const chapterNavigation = await panel.webContents.executeJavaScript('window.__wefishTest.checkChapterNavigation()', true);
+  if (
+    chapterNavigation.forward.chapterIndex !== 1
+    || chapterNavigation.forward.pageIndex !== 0
+    || chapterNavigation.forward.lineIndex !== 0
+    || chapterNavigation.backward.chapterIndex !== 0
+    || chapterNavigation.backward.lineIndex !== chapterNavigation.backward.expectedLineIndex
+    || !chapterNavigation.timerScheduled
+  ) {
+    throw new Error(`cross-chapter line navigation or timer rescheduling failed: ${JSON.stringify(chapterNavigation)}`);
+  }
   const jumped = await panel.webContents.executeJavaScript('window.__wefishTest.jumpToProgress(50)', true);
   if (jumped.chapterIndex !== 1 || jumped.pageIndex < 1) throw new Error(`renderer position jump failed: ${JSON.stringify(jumped)}`);
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -808,6 +856,17 @@ async function assertMockRenderer() {
     const item = trayMenu?.items.find((candidate) => candidate.label === label);
     if (!item || item.accelerator !== accelerator) throw new Error(`tray shortcut is missing: ${label}`);
   }
+  const readerVisibilityItem = trayMenu?.items.find((candidate) => candidate.id === 'reader-content-visibility');
+  if (!readerVisibilityItem || readerVisibilityItem.accelerator !== SHORTCUTS.readerVisibility || !readerVisibilityItem.label.startsWith('隐藏')) {
+    throw new Error('reader visibility shortcut is missing from the tray menu');
+  }
+  const panelWasVisible = panel.isVisible();
+  setReaderContentVisible(false);
+  if (readerVisibilityItem.label !== readerVisibilityLabel(false) || (panel.isVisible() && !panelWasVisible)) {
+    throw new Error('hiding the menu-bar reader changed the main-panel visibility state');
+  }
+  setReaderContentVisible(true);
+  if (readerVisibilityItem.label !== readerVisibilityLabel(true)) throw new Error('reader visibility menu label did not update');
   const contentMenu = trayMenu?.items.find((candidate) => candidate.label === '当前内容');
   const contentLabels = contentMenu?.submenu?.items.map((item) => item.label) || [];
   for (const label of ['复制当前行', '复制当前段', '划线当前行', '划线当前段', '写想法']) {
@@ -836,7 +895,8 @@ async function assertMockRenderer() {
     hasPageShortcuts: document.body.textContent.includes('上一页 / 下一页'),
     hasLineShortcuts: document.body.textContent.includes('上一行 / 下一行'),
     hasAutoLineShortcut: document.body.textContent.includes('自动逐行'),
-    hasHideShortcut: document.body.textContent.includes('隐藏 / 唤起'),
+    hasPanelShortcut: document.body.textContent.includes('显示 / 隐藏阅读舱'),
+    hasReaderVisibilityShortcut: document.body.textContent.includes('显示 / 隐藏菜单栏文字'),
     hasShelfSearch: Boolean(document.querySelector('#shelf-search')),
     hasRecentShelf: Boolean(document.querySelector('#recent-section'))
       && Boolean(document.querySelector('#recent-list')),
@@ -850,7 +910,7 @@ async function assertMockRenderer() {
       && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasHideShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasProgressRing || !chrome.hasProgressSettings || !chrome.hasTrayWidthSettings) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasPanelShortcut || !chrome.hasReaderVisibilityShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasProgressRing || !chrome.hasProgressSettings || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
   }
   const shelfSearch = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfSearch()', true);

@@ -33,6 +33,7 @@ WeFish 是一个支持 macOS 和 Windows 的桌面阅读器。它把微信读书
 | 操作 | macOS | Windows |
 | --- | --- | --- |
 | 显示 / 隐藏阅读舱 | `⌘ ⌥ M` | `Ctrl Alt M` |
+| 显示 / 隐藏菜单栏文字阅读器 | `⌘ ⌥ ⇧ M` | `Ctrl Alt Shift M` |
 | 上一页 / 下一页 | `⌘ ⌥ ← / →` | `Ctrl Alt ← / →` |
 | 上一章 / 下一章 | `⌘ ⌥ ⇧ ← / →` | `Ctrl Alt Shift ← / →` |
 | 上一行 / 下一行 | `⌘ ⌥ ↑ / ↓` | `Ctrl Alt ↑ / ↓` |
