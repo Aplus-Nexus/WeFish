@@ -1,6 +1,6 @@
 {
   "name": "wefish-desktop",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "author": "WeFish contributors",
   "description": "Menu-bar reading capsule for WeFish",
   "main": "main.js",
@@ -52,6 +52,7 @@
     ],
     "mac": {
       "category": "public.app-category.books",
+      "icon": "assets/icon.icns",
       "artifactName": "WeFish-${version}-mac.${ext}",
       "target": [
         "dmg",
@@ -59,6 +60,7 @@
       ]
     },
     "win": {
+      "icon": "assets/icon.ico",
       "artifactName": "WeFish-${version}-win.${ext}",
       "target": [
         "nsis",

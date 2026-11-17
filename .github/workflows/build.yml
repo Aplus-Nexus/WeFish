@@ -9,7 +9,43 @@ permissions:
   contents: write
 
 jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release versions agree
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          package = json.loads(Path("desktop/package.json").read_text())
+          lock = json.loads(Path("desktop/package-lock.json").read_text())
+          manifest = json.loads(Path("integrations/edge/manifest.json").read_text())
+          versions = {
+              "desktop/package.json": package["version"],
+              "desktop/package-lock.json": lock["version"],
+              "desktop/package-lock.json packages root": lock["packages"][""]["version"],
+              "integrations/edge/manifest.json": manifest["version"],
+          }
+          if len(set(versions.values())) != 1:
+              raise SystemExit(f"release versions disagree: {versions}")
+
+          version = package["version"]
+          changelog = Path("CHANGELOG.md").read_text()
+          if not re.search(rf"^## {re.escape(version)}\b", changelog, re.MULTILINE):
+              raise SystemExit(f"CHANGELOG.md has no {version} release notes")
+
+          ref = os.environ.get("GITHUB_REF_NAME", "")
+          if ref.startswith("v") and ref != f"v{version}":
+              raise SystemExit(f"tag {ref} does not match application version v{version}")
+          print(f"release version verified: v{version}")
+          PY
+
   edge-extension:
+    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +69,7 @@ jobs:
           files: WeFish-Edge-Extension-*.zip
           generate_release_notes: true
   package:
+    needs: verify-version
     strategy:
       matrix:
         include:
