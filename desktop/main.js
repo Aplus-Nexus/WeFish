@@ -968,6 +968,14 @@ async function assertMockRenderer() {
   ) {
     throw new Error(`day/night theme switch failed: ${JSON.stringify(themes)}`);
   }
+  const xhtmlReader = await panel.webContents.executeJavaScript('window.__wefishTest.checkXhtmlReader()', true);
+  if (
+    !xhtmlReader.text.includes('这是一段必须显示的 XHTML 正文')
+    || xhtmlReader.pages < 1
+    || !xhtmlReader.firstPage.includes('动物园')
+  ) {
+    throw new Error(`XHTML chapter content was swallowed: ${JSON.stringify(xhtmlReader)}`);
+  }
   const captureUi = async (name) => {
     const outputDir = String(process.env.WEFISH_CAPTURE_DIR || '').trim();
     if (!outputDir || !panel || panel.isDestroyed()) return;

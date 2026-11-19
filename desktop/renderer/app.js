@@ -341,7 +341,15 @@ async function loadShelf({ force = false } = {}) {
 }
 
 function safeReaderHtml(source) {
-  const documentFragment = new DOMParser().parseFromString(String(source || ''), 'text/html');
+  const raw = String(source || '');
+  // WeRead serves most chapters as XHTML. Some books use a self-closing
+  // <title/>; the HTML parser treats that as an unclosed title element and can
+  // swallow the entire body. Parse well-formed XHTML as XML first, then fall
+  // back to HTML for fragment-only or legacy markup.
+  const xmlDocument = new DOMParser().parseFromString(raw, 'application/xhtml+xml');
+  const documentFragment = !xmlDocument.querySelector('parsererror') && xmlDocument.body
+    ? xmlDocument
+    : new DOMParser().parseFromString(raw, 'text/html');
   documentFragment.querySelectorAll('script, iframe, object, embed, form, input, button').forEach((node) => node.remove());
   documentFragment.querySelectorAll('*').forEach((node) => {
     [...node.attributes].forEach((attribute) => {
@@ -1763,6 +1771,21 @@ if (window.location.hash === '#self-test') {
         light,
         dark,
         restored: document.documentElement.dataset.theme === original,
+      };
+    },
+    checkXhtmlReader() {
+      const source = `<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+        <html xmlns="http://www.w3.org/1999/xhtml"><head><title/>
+        <link href="../Styles/stylesheets.css" rel="stylesheet" type="text/css"/></head>
+        <body class="reader"><h1 data-wf-offset="12">动物园</h1>
+        <p data-wf-offset="24">这是一段必须显示的 XHTML 正文。</p></body></html>`;
+      const body = safeReaderHtml(source);
+      const pages = WeFishPagination.paginateFragment(body, { container: $('reader-body') });
+      return {
+        text: String(body?.textContent || '').replace(/\s+/g, ' ').trim(),
+        pages: pages.length,
+        firstPage: String(pages[0]?.text || ''),
       };
     },
     async openMock() {
