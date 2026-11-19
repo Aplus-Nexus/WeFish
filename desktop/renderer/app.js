@@ -303,6 +303,7 @@ function renderShelf(books) {
 
 async function openShelf() {
   $('shelf-drawer').setAttribute('aria-hidden', 'false');
+  $('shelf-scroll-area').scrollTop = 0;
   if (!state.shelfLoaded) await loadShelf();
 }
 
@@ -1590,6 +1591,7 @@ function bindEvents() {
   $('shelf-search').addEventListener('input', (event) => {
     state.shelfQuery = event.target.value;
     renderShelfList();
+    $('shelf-scroll-area').scrollTop = 0;
   });
   $('insights-button').addEventListener('click', showInsights);
   $('manual-button').addEventListener('click', showManualAuth);
@@ -1889,6 +1891,43 @@ if (window.location.hash === '#self-test') {
       $('shelf-search').value = original.input;
       renderShelfList();
       return { matched, recentCount, total: 2 };
+    },
+    checkShelfScroll() {
+      const original = {
+        books: state.shelfBooks,
+        recent: state.recentBooks,
+        query: state.shelfQuery,
+        loaded: state.shelfLoaded,
+        input: $('shelf-search').value,
+      };
+      state.shelfBooks = Array.from({ length: 80 }, (_, index) => normalizeBook({
+        bookId: `scroll-${index}`,
+        title: `用于滚动的书架条目 ${index + 1}`,
+        author: '合成作者',
+      }));
+      state.recentBooks = [];
+      state.shelfLoaded = true;
+      state.shelfQuery = '';
+      $('shelf-search').value = '';
+      renderShelfList();
+      const area = $('shelf-scroll-area');
+      const viewportHeight = area.clientHeight;
+      const contentHeight = area.scrollHeight;
+      area.scrollTop = contentHeight;
+      const moved = area.scrollTop > 0;
+      area.scrollTop = 0;
+      state.shelfBooks = original.books;
+      state.recentBooks = original.recent;
+      state.shelfQuery = original.query;
+      state.shelfLoaded = original.loaded;
+      $('shelf-search').value = original.input;
+      renderShelfList();
+      return {
+        scrollable: contentHeight > viewportHeight,
+        moved,
+        viewportHeight,
+        contentHeight,
+      };
     },
   };
 }

@@ -150,7 +150,7 @@ kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(238, 231, 215, .
 .button.ghost:hover { background: rgba(238, 231, 215, .15); }
 .button.tiny { padding: 7px 10px; font-size: 11px; }
 
-.drawer { position: absolute; z-index: 5; inset: 0; display: flex; flex-direction: column; padding: 22px 18px; background: #151b19; transform: translateY(0); transition: transform .2s ease; }
+.drawer { position: absolute; z-index: 5; inset: 0; display: flex; min-height: 0; flex-direction: column; padding: 22px 18px; background: #151b19; overflow: hidden; transform: translateY(0); transition: transform .2s ease; }
 .drawer[aria-hidden="true"] { transform: translateY(105%); pointer-events: none; }
 .drawer-head, .modal-head { display: flex; align-items: flex-start; justify-content: space-between; }
 .drawer-eyebrow { color: var(--lime); font-size: 9px; letter-spacing: .18em; }
@@ -165,7 +165,22 @@ kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(238, 231, 215, .
 .recent-section { margin: 0 0 15px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .recent-list { margin-top: 3px; }
 .shelf-section-title { margin: 0 0 3px; }
-.shelf-list { flex: 1; overflow: auto; }
+.shelf-scroll-area {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 5px;
+  padding-bottom: 14px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+.shelf-scroll-area::-webkit-scrollbar { width: 7px; }
+.shelf-scroll-area::-webkit-scrollbar-track { background: transparent; }
+.shelf-scroll-area::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(238, 231, 215, .22); }
+.shelf-scroll-area::-webkit-scrollbar-thumb:hover { background: rgba(184, 242, 124, .45); }
+.shelf-list { min-height: 0; }
 .shelf-item { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--paper); cursor: pointer; text-align: left; }
 .shelf-item:hover { color: var(--lime); }
 .shelf-item strong { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
@@ -252,6 +267,12 @@ kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(238, 231, 215, .
 
 @media (max-height: 420px) {
   .shell { border-radius: 12px; }
+  .drawer { padding: 10px 12px; }
+  .drawer h2, .modal-card h2 { font-size: 20px; }
+  .drawer-actions { margin: 10px 0 8px; }
+  .shelf-search { margin-bottom: 6px; padding: 6px 8px; }
+  .recent-section { margin-bottom: 8px; padding-bottom: 6px; }
+  .shelf-scroll-area { padding-bottom: 10px; }
   .topbar { height: 40px; padding: 8px 12px 5px; }
   .brand-mark { width: 16px; height: 16px; }
   .top-action-button { padding: 0 5px; font-size: 10px !important; }

@@ -1097,9 +1097,19 @@ async function assertMockRenderer() {
     throw new Error('menu-bar settings click is still coupled to the reader panel');
   }
   if (!panel.isMovable()) throw new Error('reader window is not movable');
+  // Theme checking restores the user's persisted preference, so reset the
+  // tray state before asserting the independent menu contract.
+  updateThemeMode('dark');
   const themeMenuItem = trayMenu?.items.find((candidate) => candidate.id === 'theme-dark-mode');
   if (!themeMenuItem || themeMenuItem.type !== 'checkbox' || !themeMenuItem.checked) {
-    throw new Error('dark-mode tray control is missing');
+    throw new Error(`dark-mode tray control is missing: ${JSON.stringify({
+      found: Boolean(themeMenuItem),
+      id: themeMenuItem?.id,
+      type: themeMenuItem?.type,
+      checked: themeMenuItem?.checked,
+      themeMode,
+      labels: trayMenu?.items.map((candidate) => candidate.label),
+    })}`);
   }
   updateThemeMode('light');
   if (themeMenuItem.checked) throw new Error('dark-mode tray control did not update');
@@ -1156,6 +1166,7 @@ async function assertMockRenderer() {
     hasPanelShortcut: document.body.textContent.includes('显示 / 隐藏阅读舱'),
     hasReaderVisibilityShortcut: document.body.textContent.includes('显示 / 隐藏菜单栏文字'),
     hasShelfSearch: Boolean(document.querySelector('#shelf-search')),
+    hasShelfScrollArea: Boolean(document.querySelector('#shelf-scroll-area')),
     hasRecentShelf: Boolean(document.querySelector('#recent-section'))
       && Boolean(document.querySelector('#recent-list')),
     hasProgressRing: Boolean(document.querySelector('#progress-ring-value'))
@@ -1168,12 +1179,16 @@ async function assertMockRenderer() {
       && Boolean(document.querySelector('#tray-width-number')),
   })`, true);
   if (chrome.hasBrandName) throw new Error('reader page exposes the product name');
-  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasPanelShortcut || !chrome.hasReaderVisibilityShortcut || !chrome.hasShelfSearch || !chrome.hasRecentShelf || !chrome.hasProgressRing || !chrome.hasProgressSettings || !chrome.hasTrayWidthSettings) {
+  if (!chrome.hasPageShortcuts || !chrome.hasLineShortcuts || !chrome.hasAutoLineShortcut || !chrome.hasPanelShortcut || !chrome.hasReaderVisibilityShortcut || !chrome.hasShelfSearch || !chrome.hasShelfScrollArea || !chrome.hasRecentShelf || !chrome.hasProgressRing || !chrome.hasProgressSettings || !chrome.hasTrayWidthSettings) {
     throw new Error('reader shortcut guide is incomplete');
   }
   const shelfSearch = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfSearch()', true);
   if (!shelfSearch || shelfSearch.matched !== 1 || shelfSearch.recentCount !== 1 || shelfSearch.total !== 2) {
     throw new Error(`shelf search did not filter locally: ${JSON.stringify(shelfSearch)}`);
+  }
+  const shelfScroll = await panel.webContents.executeJavaScript('window.__wefishTest.checkShelfScroll()', true);
+  if (!shelfScroll?.scrollable || !shelfScroll.moved) {
+    throw new Error(`shelf list is not scrollable: ${JSON.stringify(shelfScroll)}`);
   }
   openThoughtWindow();
   await new Promise((resolve, reject) => {
